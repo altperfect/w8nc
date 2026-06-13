@@ -134,7 +134,15 @@ logs:
 	$(COMPOSE) logs -f $(APP_SERVICE)
 
 health:
-	curl -fsS --retry 12 --retry-delay 1 --retry-all-errors $(APP_URL)/api/health
+	@for attempt in $$(seq 1 12); do \
+		if curl -fsS $(APP_URL)/api/health; then \
+			printf "\n"; \
+			exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	printf "Health check failed after 12 attempts.\n" >&2; \
+	exit 1
 	@printf "\n"
 
 down:
