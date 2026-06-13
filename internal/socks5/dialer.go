@@ -1,4 +1,4 @@
-package pinger
+package socks5
 
 import (
 	"context"
@@ -9,23 +9,23 @@ import (
 	"time"
 )
 
-type socks5Dialer struct {
-	proxyAddress string
-	username     string
-	password     string
-	timeout      time.Duration
+type Dialer struct {
+	ProxyAddress string
+	Username     string
+	Password     string
+	Timeout      time.Duration
 }
 
-func (d socks5Dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	dialer := &net.Dialer{Timeout: d.timeout}
-	conn, err := dialer.DialContext(ctx, network, d.proxyAddress)
+func (d Dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: d.Timeout}
+	conn, err := dialer.DialContext(ctx, network, d.ProxyAddress)
 	if err != nil {
 		return nil, err
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
-	} else if d.timeout > 0 {
-		_ = conn.SetDeadline(time.Now().Add(d.timeout))
+	} else if d.Timeout > 0 {
+		_ = conn.SetDeadline(time.Now().Add(d.Timeout))
 	}
 	if err := d.handshake(conn, address); err != nil {
 		_ = conn.Close()
@@ -35,9 +35,9 @@ func (d socks5Dialer) DialContext(ctx context.Context, network, address string) 
 	return conn, nil
 }
 
-func (d socks5Dialer) handshake(conn net.Conn, target string) error {
+func (d Dialer) handshake(conn net.Conn, target string) error {
 	methods := []byte{0x00}
-	if d.username != "" {
+	if d.Username != "" {
 		methods = []byte{0x00, 0x02}
 	}
 	if _, err := conn.Write(append([]byte{0x05, byte(len(methods))}, methods...)); err != nil {
@@ -80,9 +80,9 @@ func (d socks5Dialer) handshake(conn net.Conn, target string) error {
 	return nil
 }
 
-func (d socks5Dialer) authenticate(conn net.Conn) error {
-	username := []byte(d.username)
-	password := []byte(d.password)
+func (d Dialer) authenticate(conn net.Conn) error {
+	username := []byte(d.Username)
+	password := []byte(d.Password)
 	if len(username) > 255 || len(password) > 255 {
 		return fmt.Errorf("SOCKS5 proxy credentials are too long")
 	}

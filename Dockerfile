@@ -5,7 +5,7 @@ RUN npm install
 COPY web/ ./
 RUN npm run build
 
-FROM golang:1.25-alpine AS build
+FROM golang:1.26-alpine AS build
 ARG NOTIFY_VERSION=v1.0.7
 RUN apk add --no-cache ca-certificates git
 RUN go install github.com/projectdiscovery/notify/cmd/notify@${NOTIFY_VERSION}
@@ -18,7 +18,8 @@ COPY --from=web /src/web/dist ./internal/static/dist
 RUN go build -o /out/w8nc ./cmd/server
 
 FROM alpine:3.22
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata chromium font-noto
+ENV HOME=/tmp
 WORKDIR /app
 COPY --from=build /out/w8nc /app/w8nc
 COPY --from=build /go/bin/notify /usr/local/bin/notify

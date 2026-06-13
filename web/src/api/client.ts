@@ -2,6 +2,7 @@ import type {
   Endpoint,
   EndpointCheck,
   EndpointInput,
+  ScreenshotAttempt,
   EndpointTestResult,
   ListResponse,
   MeResponse,
@@ -9,6 +10,26 @@ import type {
   ProxyConfig,
   TemplatePlaceholdersResponse
 } from '../types'
+
+type SessionExpiredHandler = () => void
+
+const defaultSessionExpiredHandler = () => {
+  window.location.reload()
+}
+
+let sessionExpiredHandler: SessionExpiredHandler = defaultSessionExpiredHandler
+let sessionExpiredHandled = false
+
+export function configureSessionExpiredHandler(handler: SessionExpiredHandler = defaultSessionExpiredHandler) {
+  sessionExpiredHandler = handler
+  sessionExpiredHandled = false
+}
+
+function handleSessionExpired(status: number, message: string) {
+  if (status !== 401 || message.toLowerCase() !== 'authentication required' || sessionExpiredHandled) return
+  sessionExpiredHandled = true
+  sessionExpiredHandler()
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
@@ -27,6 +48,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       // Keep the HTTP status text when the response is not JSON.
     }
+    handleSessionExpired(response.status, message)
     throw new Error(message)
   }
   if (response.status === 204) {
@@ -61,6 +83,9 @@ export const api = {
   pingNow: (id: string) => request<Endpoint>(`/api/endpoints/${id}/ping-now`, { method: 'POST' }),
   listChecks: (id: string, page = 1, pageSize = 20) =>
     request<ListResponse<EndpointCheck>>(`/api/endpoints/${id}/checks?page=${page}&page_size=${pageSize}`),
+  retryScreenshotAttempt: (id: string) =>
+    request<ScreenshotAttempt>(`/api/screenshot-attempts/${id}/retry`, { method: 'POST' }),
+  screenshotImageURL: (id: string) => `/api/screenshot-attempts/${encodeURIComponent(id)}/image`,
   getNotificationSettings: () => request<NotificationSettings>('/api/settings/notifications'),
   updateNotificationSettings: (input: {
     telegram_enabled: boolean

@@ -21,6 +21,13 @@ services:
       PING_WORKER_CONCURRENCY: "10"
       MIN_PING_INTERVAL: "5s"
       MAX_PING_INTERVAL: "30d"
+      SCREENSHOTS_ENABLED: "true"
+      SCREENSHOT_CHROME_PATH: "/usr/bin/chromium-browser"
+      SCREENSHOT_STORAGE_PATH: "/app/data/screenshots"
+      SCREENSHOT_TIMEOUT: "20s"
+      SCREENSHOT_VIEWPORT_WIDTH: "1365"
+      SCREENSHOT_VIEWPORT_HEIGHT: "900"
+      SCREENSHOT_MAX_CONCURRENCY: "1"
       ALLOW_PRIVATE_TARGETS: "false"
       LOG_LEVEL: "info"
     depends_on:

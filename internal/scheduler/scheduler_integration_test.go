@@ -30,6 +30,7 @@ func TestSchedulerNotifyOnceDeactivatesAndCreatesOneEvent(t *testing.T) {
 		PingIntervalSeconds:  5,
 		NotifyCondition:      condition("status_code_equals", 200),
 		NotificationTemplate: "{{status_code}} {{url}}",
+		ScreenshotOnMatch:    true,
 		Active:               true,
 	})
 	if err != nil {
@@ -56,6 +57,9 @@ func TestSchedulerNotifyOnceDeactivatesAndCreatesOneEvent(t *testing.T) {
 	}
 	if count := notificationEventCount(t, store, endpoint.ID); count != 1 {
 		t.Fatalf("notification events=%d, want 1", count)
+	}
+	if count := screenshotAttemptCount(t, store, endpoint.ID); count != 1 {
+		t.Fatalf("screenshot attempts=%d, want 1", count)
 	}
 	if err := service.RunDueOnce(context.Background()); err != nil {
 		t.Fatal(err)
@@ -150,6 +154,15 @@ func TestManualPingInactiveEndpointRecordsLastResult(t *testing.T) {
 	if updated.LastStatusCode == nil || *updated.LastStatusCode != http.StatusOK {
 		t.Fatalf("last_status_code=%v, want %d", updated.LastStatusCode, http.StatusOK)
 	}
+}
+
+func screenshotAttemptCount(t *testing.T, store *db.Store, endpointID string) int {
+	t.Helper()
+	var count int
+	if err := store.Pool.QueryRow(context.Background(), `SELECT count(*) FROM screenshot_attempts WHERE endpoint_id=$1`, endpointID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
 }
 
 func notificationEventCount(t *testing.T, store *db.Store, endpointID string) int {

@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -13,6 +16,7 @@ import (
 
 	secretbox "w8nc/internal/crypto"
 	"w8nc/internal/models"
+	"w8nc/internal/socks5"
 )
 
 type Notifier struct {
@@ -54,9 +58,9 @@ func (n *Notifier) Send(ctx context.Context, settings models.NotificationSetting
 	if n.Secrets == nil {
 		return fmt.Errorf("secret encryption is not configured")
 	}
-	token, err := n.Secrets.Decrypt(*settings.TelegramAPIKeyEncrypted)
+	token, err := n.telegramToken(settings)
 	if err != nil {
-		return fmt.Errorf("telegram token could not be decrypted")
+		return err
 	}
 	if err := n.writeProviderConfig(token, *settings.TelegramChatID, settings.TelegramParseMode); err != nil {
 		return err
@@ -74,6 +78,68 @@ func (n *Notifier) Send(ctx context.Context, settings models.NotificationSetting
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("notify failed: %s %s", strings.TrimSpace(stdout.String()), strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+func (n *Notifier) SendScreenshot(ctx context.Context, settings models.NotificationSettings, urlValue string, imagePath string) error {
+	if !settings.TelegramEnabled {
+		return fmt.Errorf("telegram notifications are disabled")
+	}
+	if settings.TelegramChatID == nil || *settings.TelegramChatID == "" {
+		return fmt.Errorf("telegram chat id must be configured")
+	}
+	token, err := n.telegramToken(settings)
+	if err != nil {
+		return err
+	}
+	image, err := os.Open(imagePath)
+	if err != nil {
+		return fmt.Errorf("screenshot image could not be opened")
+	}
+	defer image.Close()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("chat_id", *settings.TelegramChatID); err != nil {
+		return err
+	}
+	if err := writer.WriteField("caption", telegramCaption("Screenshot of "+urlValue)); err != nil {
+		return err
+	}
+	part, err := writer.CreateFormFile("photo", filepath.Base(imagePath))
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(part, image); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	client, err := n.telegramHTTPClient(settings)
+	if err != nil {
+		return err
+	}
+	requestURL := "https://api.telegram.org/bot" + token + "/sendPhoto"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, &body)
+	if err != nil {
+		return fmt.Errorf("telegram screenshot request could not be created")
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram screenshot upload failed")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		message := strings.TrimSpace(string(data))
+		if message == "" {
+			message = resp.Status
+		}
+		return fmt.Errorf("telegram screenshot upload failed: %s", message)
 	}
 	return nil
 }
@@ -102,6 +168,44 @@ func (n *Notifier) proxyURL(proxy models.ProxyConfig) (string, error) {
 		u.User = url.UserPassword(proxy.Username, password)
 	}
 	return u.String(), nil
+}
+
+func (n *Notifier) telegramToken(settings models.NotificationSettings) (string, error) {
+	if settings.TelegramAPIKeyEncrypted == nil || *settings.TelegramAPIKeyEncrypted == "" {
+		return "", fmt.Errorf("telegram token and chat id must be configured")
+	}
+	if n.Secrets == nil {
+		return "", fmt.Errorf("secret encryption is not configured")
+	}
+	token, err := n.Secrets.Decrypt(*settings.TelegramAPIKeyEncrypted)
+	if err != nil {
+		return "", fmt.Errorf("telegram token could not be decrypted")
+	}
+	return token, nil
+}
+
+func (n *Notifier) telegramHTTPClient(settings models.NotificationSettings) (*http.Client, error) {
+	client := &http.Client{Timeout: n.Timeout}
+	if !settings.Proxy.Enabled {
+		return client, nil
+	}
+	if settings.Proxy.Address == "" {
+		return nil, fmt.Errorf("SOCKS5 proxy address is not configured")
+	}
+	password, err := n.proxyPassword(settings.Proxy)
+	if err != nil {
+		return nil, err
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	dialer := socks5.Dialer{
+		ProxyAddress: settings.Proxy.Address,
+		Username:     settings.Proxy.Username,
+		Password:     password,
+		Timeout:      n.Timeout,
+	}
+	transport.DialContext = dialer.DialContext
+	client.Transport = transport
+	return client, nil
 }
 
 func (n *Notifier) proxyPassword(proxy models.ProxyConfig) (string, error) {
@@ -136,4 +240,13 @@ func (n *Notifier) writeProviderConfig(token, chatID, parseMode string) error {
 		content += fmt.Sprintf("    telegram_parsemode: %q\n", parseMode)
 	}
 	return os.WriteFile(n.ProviderConfigPath, []byte(content), 0o600)
+}
+
+func telegramCaption(value string) string {
+	const limit = 1024
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit-3]) + "..."
 }

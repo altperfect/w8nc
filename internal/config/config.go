@@ -30,6 +30,13 @@ type Config struct {
 	PingWorkerConcurrency    int
 	MinPingInterval          time.Duration
 	MaxPingInterval          time.Duration
+	ScreenshotsEnabled       bool
+	ScreenshotChromePath     string
+	ScreenshotStoragePath    string
+	ScreenshotTimeout        time.Duration
+	ScreenshotViewportWidth  int
+	ScreenshotViewportHeight int
+	ScreenshotMaxConcurrency int
 	AllowPrivateTargets      bool
 	LogLevel                 slog.Level
 }
@@ -66,6 +73,13 @@ func Load() Config {
 		PingWorkerConcurrency:    envInt("PING_WORKER_CONCURRENCY", 10),
 		MinPingInterval:          minInterval,
 		MaxPingInterval:          maxInterval,
+		ScreenshotsEnabled:       envBool("SCREENSHOTS_ENABLED", true),
+		ScreenshotChromePath:     env("SCREENSHOT_CHROME_PATH", "/usr/bin/chromium-browser"),
+		ScreenshotStoragePath:    env("SCREENSHOT_STORAGE_PATH", "/app/data/screenshots"),
+		ScreenshotTimeout:        envDuration("SCREENSHOT_TIMEOUT", 20*time.Second),
+		ScreenshotViewportWidth:  envInt("SCREENSHOT_VIEWPORT_WIDTH", 1365),
+		ScreenshotViewportHeight: envInt("SCREENSHOT_VIEWPORT_HEIGHT", 900),
+		ScreenshotMaxConcurrency: envInt("SCREENSHOT_MAX_CONCURRENCY", 1),
 		AllowPrivateTargets:      envBool("ALLOW_PRIVATE_TARGETS", false),
 		LogLevel:                 level,
 	}
