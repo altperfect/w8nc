@@ -12,26 +12,32 @@ GOMODCACHE ?= /tmp/w8nc-gomodcache
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init-secrets require-secrets rotate-encryption-key deps test test-web test-go build build-web sync-static build-go ci docker-build prepare-app-data up deploy redeploy restart set-password reset-login-attempts ps logs health down clean
+.PHONY: help init-secrets require-secrets rotate-encryption-key deps test test-web test-go build build-web sync-static build-go ci docker-build prepare-app-data up deploy set-password reset-login-attempts ps logs health down clean
 
 help:
 	@printf "Targets:\n"
-	@printf "  make deps          Install frontend dependencies\n"
-	@printf "  make init-secrets  Create local .env with generated secrets\n"
-	@printf "  make test          Run frontend and Go tests\n"
-	@printf "  make build         Build frontend, embed assets, and build Go server\n"
-	@printf "  make ci            Run test and build\n"
-	@printf "  make deploy        Build Docker app image and start compose stack\n"
-	@printf "  make redeploy      Run tests, rebuild image, and restart compose stack\n"
-	@printf "  make prepare-app-data  Ensure app data volume is writable by the rootless app user\n"
+	@printf "  make init-secrets           Create local .env with generated secrets\n"
+	@printf "  make deps                   Install frontend dependencies\n"
+	@printf "  make test                   Run frontend and Go tests\n"
+	@printf "  make test-web               Run frontend tests only\n"
+	@printf "  make test-go                Run Go tests only\n"
+	@printf "  make build                  Build frontend, sync static assets, and build Go server\n"
+	@printf "  make build-web              Build frontend assets only\n"
+	@printf "  make sync-static            Copy web/dist into internal/static/dist\n"
+	@printf "  make build-go               Build Go server only\n"
+	@printf "  make ci                     Run tests and full local build\n"
+	@printf "  make docker-build           Build Docker app image\n"
+	@printf "  make prepare-app-data       Ensure app data volume is writable by the rootless app user\n"
+	@printf "  make up                     Start compose stack\n"
+	@printf "  make deploy                 Build Docker app image, start compose stack, and run health check\n"
+	@printf "  make health                 Check the running app health endpoint\n"
+	@printf "  make ps                     Show compose service status\n"
+	@printf "  make logs                   Follow app container logs\n"
+	@printf "  make down                   Stop compose stack\n"
 	@printf "  make rotate-encryption-key  Re-encrypt stored secrets under a new key\n"
-	@printf "  make set-password  Generate and set a new login password\n"
-	@printf "  make reset-login-attempts  Clear login rate-limit lockouts\n"
-	@printf "  make health        Check the running app health endpoint\n"
-	@printf "  make ps            Show compose service status\n"
-	@printf "  make logs          Follow app container logs\n"
-	@printf "  make down          Stop compose stack\n"
-	@printf "  make clean         Remove generated local build artifacts\n"
+	@printf "  make set-password           Generate and set a new login password\n"
+	@printf "  make reset-login-attempts   Clear login rate-limit lockouts\n"
+	@printf "  make clean                  Remove generated local build artifacts\n"
 
 init-secrets:
 	@if [ -f .env ]; then \
@@ -101,13 +107,6 @@ deploy: require-secrets
 	$(MAKE) up
 	$(MAKE) health
 
-redeploy:
-	$(MAKE) test
-	$(MAKE) deploy
-
-restart:
-	$(COMPOSE) restart $(APP_SERVICE)
-
 rotate-encryption-key: require-secrets
 	@command -v openssl >/dev/null 2>&1 || { printf "openssl is required to generate a new encryption key.\n" >&2; exit 1; }
 	@new_key=$$(openssl rand -base64 32); \
@@ -143,7 +142,6 @@ health:
 	done; \
 	printf "Health check failed after 12 attempts.\n" >&2; \
 	exit 1
-	@printf "\n"
 
 down:
 	$(COMPOSE) down

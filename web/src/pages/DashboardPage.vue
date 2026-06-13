@@ -204,6 +204,11 @@ function closeEndpointModal() {
   formError.value = ''
 }
 
+function dismissEndpointModal() {
+  if (busy.value) return
+  closeEndpointModal()
+}
+
 function formatDate(value?: string) {
   if (!value) return ''
   return new Date(value).toLocaleString()
@@ -315,9 +320,9 @@ onUnmounted(() => {
 <template>
   <section class="dashboard-hero">
     <div>
-      <p class="eyebrow">Recon monitor</p>
+      <p class="eyebrow">Dashboard</p>
       <h2>Endpoints</h2>
-      <p class="subtle">Monitor endpoint checks, response changes, and notify-once alerts from one workspace.</p>
+      <p class="subtle">Monitor, create and configure endpoints that need to be watched.</p>
     </div>
     <button class="primary hero-action" @click="openCreate">
       <Plus :size="18" />
@@ -514,13 +519,13 @@ onUnmounted(() => {
     </select>
   </footer>
 
-  <div v-if="modal" class="modal-backdrop">
+  <div v-if="modal" class="modal-backdrop" @click.self="dismissEndpointModal">
     <section class="modal panel">
       <header class="modal-header">
         <h2>{{ modal === 'edit' ? 'Edit endpoint' : 'Create endpoint' }}</h2>
-        <button class="icon-button" title="Close" @click="closeEndpointModal"><X :size="16" /></button>
+        <button class="icon-button" title="Close" @click="dismissEndpointModal"><X :size="16" /></button>
       </header>
-      <EndpointForm :endpoint="editing" :error="formError" @save="saveEndpoint" @cancel="closeEndpointModal" />
+      <EndpointForm :endpoint="editing" :error="formError" @save="saveEndpoint" @cancel="dismissEndpointModal" />
       <div v-if="busy" class="overlay">Saving...</div>
     </section>
   </div>

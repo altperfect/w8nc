@@ -63,7 +63,11 @@ describe('EndpointForm', () => {
     await wrapper.get('input[aria-label="Ping interval amount"]').setValue(30)
     await wrapper.get('select[aria-label="Ping interval unit"]').setValue('m')
     await wrapper.get('input[aria-label="Deactivate after amount"]').setValue(3)
-    await wrapper.findAll('input[type="checkbox"]')[2].setValue(true)
+    await wrapper
+      .findAll('label')
+      .find((label) => label.text().includes('SOCKS5 proxy'))!
+      .find('input')
+      .setValue(true)
     await wrapper.get('input[placeholder="127.0.0.1"]').setValue('127.0.0.1')
     await wrapper.get('input[placeholder="9050"]').setValue('9050')
     await wrapper.get('input[autocomplete="off"]').setValue('proxy-user')
@@ -215,7 +219,11 @@ describe('EndpointForm', () => {
     })
     const wrapper = mount(EndpointForm)
 
-    await wrapper.findAll('input[type="checkbox"]')[2].setValue(true)
+    await wrapper
+      .findAll('label')
+      .find((label) => label.text().includes('SOCKS5 proxy'))!
+      .find('input')
+      .setValue(true)
     await flushPromises()
     expect(wrapper.text()).toContain('Reuse latest socks5 proxy to proxy.example:1080?')
     await wrapper.findAll('button').find((button) => button.text() === 'Yes')?.trigger('click')
@@ -249,8 +257,10 @@ describe('EndpointForm', () => {
 
     await wrapper.get('input[placeholder="https://example.com/admin"]').setValue('https://example.com/api')
     await wrapper.get('select').setValue('POST')
-    await wrapper.findAll('input[type="checkbox"]')[0].setValue(true)
-    await wrapper.get('textarea[placeholder=\'{"key":"value"}\']').setValue(body)
+    const requestBodyDetails = wrapper.get('.request-body-field')
+    ;(requestBodyDetails.element as HTMLDetailsElement).open = true
+    await requestBodyDetails.trigger('toggle')
+    await wrapper.get('textarea[aria-label="Request body"]').setValue(body)
 
     const sendButton = wrapper.findAll('button').find((button) => button.text().includes('Send test'))
     await sendButton!.trigger('click')
@@ -265,7 +275,7 @@ describe('EndpointForm', () => {
     )
   })
 
-  it('clears request body before saving when the checkbox is off', async () => {
+  it('clears request body before saving when the request body area is empty', async () => {
     const wrapper = mount(EndpointForm, {
       props: {
         endpoint: {
@@ -294,7 +304,9 @@ describe('EndpointForm', () => {
       }
     })
 
-    await wrapper.findAll('input[type="checkbox"]')[0].setValue(false)
+    expect((wrapper.get('.request-body-field').element as HTMLDetailsElement).open).toBe(false)
+
+    await wrapper.get('textarea[aria-label="Request body"]').setValue('')
     await wrapper.find('form').trigger('submit')
 
     expect(wrapper.emitted('save')?.[0]?.[0]).toEqual(
@@ -336,7 +348,11 @@ describe('EndpointForm', () => {
     })
     const wrapper = mount(EndpointForm)
 
-    await wrapper.findAll('input[type="checkbox"]')[2].setValue(true)
+    await wrapper
+      .findAll('label')
+      .find((label) => label.text().includes('SOCKS5 proxy'))!
+      .find('input')
+      .setValue(true)
     await flushPromises()
     expect(wrapper.text()).toContain('Reuse latest socks5 proxy to proxy.example:1080?')
 
@@ -356,7 +372,11 @@ describe('EndpointForm', () => {
     })
     const wrapper = mount(EndpointForm)
 
-    await wrapper.findAll('input[type="checkbox"]')[2].setValue(true)
+    await wrapper
+      .findAll('label')
+      .find((label) => label.text().includes('SOCKS5 proxy'))!
+      .find('input')
+      .setValue(true)
     await flushPromises()
     expect(wrapper.text()).toContain('Reuse latest socks5 proxy to proxy.example:1080?')
 

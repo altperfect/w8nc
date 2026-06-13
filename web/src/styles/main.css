@@ -722,7 +722,8 @@ th {
   font-size: 0.72rem;
 }
 
-.description-field {
+.description-field,
+.request-body-field {
   display: block;
   padding: 0.5rem 0.56rem;
   border: 1px solid #242930;
@@ -730,7 +731,8 @@ th {
   background: #0f1114;
 }
 
-.description-field summary {
+.description-field summary,
+.request-body-field summary {
   cursor: pointer;
   color: #9aa2ab;
   font-size: 0.78rem;
@@ -755,7 +757,8 @@ th {
   white-space: nowrap;
 }
 
-.description-field textarea {
+.description-field textarea,
+.request-body-field textarea {
   margin-top: 0.52rem;
 }
 

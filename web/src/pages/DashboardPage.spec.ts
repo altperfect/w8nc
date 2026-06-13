@@ -10,7 +10,11 @@ const mocks = vi.hoisted(() => ({
   deactivateEndpoint: vi.fn(),
   pingNow: vi.fn(),
   listChecks: vi.fn(),
-  retryScreenshotAttempt: vi.fn()
+  retryScreenshotAttempt: vi.fn(),
+  getTemplatePlaceholders: vi.fn(),
+  getLastProxy: vi.fn(),
+  testEndpointRequest: vi.fn(),
+  deleteTag: vi.fn()
 }))
 
 vi.mock('../api/client', () => ({
@@ -23,6 +27,10 @@ vi.mock('../api/client', () => ({
     pingNow: mocks.pingNow,
     listChecks: mocks.listChecks,
     retryScreenshotAttempt: mocks.retryScreenshotAttempt,
+    getTemplatePlaceholders: mocks.getTemplatePlaceholders,
+    getLastProxy: mocks.getLastProxy,
+    testEndpointRequest: mocks.testEndpointRequest,
+    deleteTag: mocks.deleteTag,
     screenshotImageURL: (id: string) => `/api/screenshot-attempts/${id}/image`
   }
 }))
@@ -37,6 +45,19 @@ describe('DashboardPage', () => {
     mocks.pingNow.mockReset()
     mocks.listChecks.mockReset()
     mocks.retryScreenshotAttempt.mockReset()
+    mocks.getTemplatePlaceholders.mockReset()
+    mocks.getLastProxy.mockReset()
+    mocks.testEndpointRequest.mockReset()
+    mocks.deleteTag.mockReset()
+    mocks.getTemplatePlaceholders.mockResolvedValue({ items: [] })
+    mocks.getLastProxy.mockResolvedValue({ available: false })
+    mocks.testEndpointRequest.mockResolvedValue({
+      duration_ms: 0,
+      truncated: false,
+      body_preview: '',
+      body_preview_truncated: false
+    })
+    mocks.deleteTag.mockResolvedValue(undefined)
     mocks.listEndpoints.mockResolvedValue({
       items: [
         {
@@ -162,6 +183,20 @@ describe('DashboardPage', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('No endpoints yet')
     expect(wrapper.text()).toContain('Add endpoint')
+  })
+
+  it('closes the endpoint modal when clicking outside it', async () => {
+    const wrapper = mount(DashboardPage)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Add endpoint')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Create endpoint')
+
+    await wrapper.get('.modal-backdrop').trigger('click')
+
+    expect(wrapper.text()).not.toContain('Create endpoint')
   })
 
   it('confirms endpoint deletion in an app modal', async () => {

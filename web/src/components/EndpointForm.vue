@@ -63,6 +63,7 @@ const testBusy = ref(false)
 const testAttempted = ref(false)
 const testError = ref('')
 const testResult = ref<EndpointTestResult | null>(null)
+const requestBodyOpen = ref(false)
 const lastProxy = ref<ProxyConfig | null>(null)
 const lastProxyLoaded = ref(false)
 const proxyReusePromptVisible = ref(false)
@@ -96,6 +97,12 @@ const testTitle = computed(() => {
   if (testAttempted.value) return 'Test request'
   return 'Verify your request behaves as expected (for now).'
 })
+const requestBodySummary = computed(() => {
+  const length = String(state.request_body || '').length
+  if (length > 0) return `${length} characters`
+  if (requestBodyOpen.value) return 'Enabled'
+  return 'Optional'
+})
 const lastProxyTarget = computed(() => {
   if (!lastProxy.value?.address) return ''
   const parts = splitProxyAddress(lastProxy.value.address)
@@ -115,6 +122,13 @@ watch(
   () => state.http_method,
   () => {
     if (!screenshotSupported.value) state.screenshot_on_match = false
+  }
+)
+
+watch(
+  () => state.request_body,
+  (body) => {
+    state.request_body_enabled = requestBodyOpen.value || String(body || '').length > 0
   }
 )
 
@@ -197,13 +211,15 @@ function appendTemplatePlaceholder(placeholder: string) {
 }
 
 function currentInput(): EndpointInput {
+  const requestBody = state.request_body || ''
+  const requestBodyEnabled = requestBodyOpen.value || String(requestBody).length > 0
   return {
     ...state,
     name: state.name ? String(state.name).trim() : null,
     description: String(state.description || '').trim(),
     http_method: state.http_method.toUpperCase(),
-    request_body_enabled: Boolean(state.request_body_enabled),
-    request_body: state.request_body_enabled ? state.request_body || '' : '',
+    request_body_enabled: requestBodyEnabled,
+    request_body: requestBodyEnabled ? requestBody : '',
     proxy: proxyInput(),
     ping_interval: durationValue(pingInterval),
     deactivate_after: durationValue(deactivateAfter) || null,
@@ -215,6 +231,11 @@ function currentInput(): EndpointInput {
         return { ...header, sensitive: masked, masked }
       })
   }
+}
+
+function handleRequestBodyToggle(event: Event) {
+  requestBodyOpen.value = (event.target as HTMLDetailsElement).open
+  state.request_body_enabled = requestBodyOpen.value || String(state.request_body || '').length > 0
 }
 
 function sanitizeTagDraft(event: Event) {
@@ -500,19 +521,21 @@ async function testRequest() {
         </div>
         <p v-if="tagError" class="error compact-error">{{ tagError }}</p>
       </div>
-      <label class="inline checkbox-line wide">
-        <input v-model="state.request_body_enabled" type="checkbox" />
-        Request has body
-      </label>
-      <label v-if="state.request_body_enabled" class="request-body-field wide">
-        Request body
+      <details class="request-body-field wide" :open="requestBodyOpen" @toggle="handleRequestBodyToggle">
+        <summary>
+          <span class="description-summary-content">
+            <span class="description-summary-label">Request body</span>
+            <span class="description-counter">{{ requestBodySummary }}</span>
+          </span>
+        </summary>
         <textarea
           v-model="state.request_body"
+          aria-label="Request body"
           rows="8"
           spellcheck="false"
           placeholder='{"key":"value"}'
         />
-      </label>
+      </details>
       <label>
         Ping interval
         <div class="duration-field">
