@@ -1,6 +1,6 @@
 # w8nc
 
-Self-hosted endpoint monitoring for bug bounty, recon and other monitoring workflows. The app stores HTTP endpoints, pings active targets on their configured interval, records status/length/error metadata, evaluates notify-once conditions, and dispatches Telegram alerts through the ProjectDiscovery `notify` binary.
+Self-hosted endpoint monitoring for monitoring workflows. The app stores HTTP endpoints, pings active targets on their configured interval, records status/length/error metadata, evaluates notify-once conditions, and dispatches Telegram alerts through the ProjectDiscovery `notify` binary.
 
 ## Quick Start
 
