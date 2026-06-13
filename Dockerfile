@@ -23,6 +23,10 @@ WORKDIR /app
 COPY --from=build /out/endpoint-pinger /app/endpoint-pinger
 COPY --from=build /go/bin/notify /usr/local/bin/notify
 COPY migrations /app/migrations
-RUN mkdir -p /app/data
+RUN addgroup -S -g 10001 w8nc \
+    && adduser -S -D -H -u 10001 -G w8nc w8nc \
+    && mkdir -p /app/data \
+    && chown -R w8nc:w8nc /app
+USER w8nc:w8nc
 EXPOSE 8080
 CMD ["/app/endpoint-pinger"]

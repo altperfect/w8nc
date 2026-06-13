@@ -12,7 +12,7 @@ GOMODCACHE ?= /tmp/w8nc-gomodcache
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init-secrets require-secrets rotate-encryption-key deps test test-web test-go build build-web sync-static build-go ci docker-build up deploy redeploy restart set-password reset-login-attempts ps logs health down clean
+.PHONY: help init-secrets require-secrets rotate-encryption-key deps test test-web test-go build build-web sync-static build-go ci docker-build prepare-app-data up deploy redeploy restart set-password reset-login-attempts ps logs health down clean
 
 help:
 	@printf "Targets:\n"
@@ -23,6 +23,7 @@ help:
 	@printf "  make ci            Run test and build\n"
 	@printf "  make deploy        Build Docker app image and start compose stack\n"
 	@printf "  make redeploy      Run tests, rebuild image, and restart compose stack\n"
+	@printf "  make prepare-app-data  Ensure app data volume is writable by the rootless app user\n"
 	@printf "  make rotate-encryption-key  Re-encrypt stored secrets under a new key\n"
 	@printf "  make set-password  Generate and set a new login password\n"
 	@printf "  make reset-login-attempts  Clear login rate-limit lockouts\n"
@@ -88,11 +89,15 @@ ci:
 docker-build:
 	$(COMPOSE) build $(APP_SERVICE)
 
+prepare-app-data:
+	$(COMPOSE) run --rm --no-deps --user root $(APP_SERVICE) chown -R 10001:10001 /app/data
+
 up:
 	$(COMPOSE) up -d
 
 deploy: require-secrets
 	$(MAKE) docker-build
+	$(MAKE) prepare-app-data
 	$(MAKE) up
 	$(MAKE) health
 
