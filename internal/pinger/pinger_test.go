@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"bug-bounty-endpoint-pinger/internal/models"
+	"w8nc/internal/models"
 )
 
 func TestPingSendsConfiguredRequestBodyForAnyMethod(t *testing.T) {

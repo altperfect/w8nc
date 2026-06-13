@@ -13,17 +13,17 @@ import (
 	"syscall"
 	"time"
 
-	"bug-bounty-endpoint-pinger/internal/api"
-	"bug-bounty-endpoint-pinger/internal/auth"
-	"bug-bounty-endpoint-pinger/internal/config"
-	secretbox "bug-bounty-endpoint-pinger/internal/crypto"
-	"bug-bounty-endpoint-pinger/internal/db"
-	"bug-bounty-endpoint-pinger/internal/logging"
-	"bug-bounty-endpoint-pinger/internal/models"
-	"bug-bounty-endpoint-pinger/internal/notifier"
-	"bug-bounty-endpoint-pinger/internal/pinger"
-	"bug-bounty-endpoint-pinger/internal/scheduler"
-	"bug-bounty-endpoint-pinger/internal/static"
+	"w8nc/internal/api"
+	"w8nc/internal/auth"
+	"w8nc/internal/config"
+	secretbox "w8nc/internal/crypto"
+	"w8nc/internal/db"
+	"w8nc/internal/logging"
+	"w8nc/internal/models"
+	"w8nc/internal/notifier"
+	"w8nc/internal/pinger"
+	"w8nc/internal/scheduler"
+	"w8nc/internal/static"
 )
 
 // Docker runs the server on Linux, where SIGUSR1 is signal 10. Using the

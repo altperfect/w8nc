@@ -3,7 +3,7 @@ package db
 import (
 	"testing"
 
-	"bug-bounty-endpoint-pinger/internal/models"
+	"w8nc/internal/models"
 )
 
 func TestHeaderViewsMaskSensitiveValues(t *testing.T) {

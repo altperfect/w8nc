@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"bug-bounty-endpoint-pinger/internal/models"
-	tz "bug-bounty-endpoint-pinger/internal/timezone"
+	"w8nc/internal/models"
+	tz "w8nc/internal/timezone"
 )
 
 type Evaluation struct {

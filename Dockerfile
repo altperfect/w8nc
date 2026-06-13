@@ -15,12 +15,12 @@ RUN go mod download
 COPY . .
 RUN rm -rf internal/static/dist
 COPY --from=web /src/web/dist ./internal/static/dist
-RUN go build -o /out/endpoint-pinger ./cmd/server
+RUN go build -o /out/w8nc ./cmd/server
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
-COPY --from=build /out/endpoint-pinger /app/endpoint-pinger
+COPY --from=build /out/w8nc /app/w8nc
 COPY --from=build /go/bin/notify /usr/local/bin/notify
 COPY migrations /app/migrations
 RUN addgroup -S -g 10001 w8nc \
@@ -29,4 +29,4 @@ RUN addgroup -S -g 10001 w8nc \
     && chown -R w8nc:w8nc /app
 USER w8nc:w8nc
 EXPOSE 8080
-CMD ["/app/endpoint-pinger"]
+CMD ["/app/w8nc"]

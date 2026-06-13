@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"bug-bounty-endpoint-pinger/internal/validation"
+	"w8nc/internal/validation"
 )
 
 type Config struct {

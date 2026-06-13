@@ -3,7 +3,7 @@ package security
 import (
 	"testing"
 
-	"bug-bounty-endpoint-pinger/internal/models"
+	"w8nc/internal/models"
 )
 
 func TestDetectSensitive(t *testing.T) {

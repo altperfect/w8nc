@@ -1,4 +1,4 @@
-module bug-bounty-endpoint-pinger
+module w8nc
 
 go 1.25
 

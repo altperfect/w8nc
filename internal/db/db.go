@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"bug-bounty-endpoint-pinger/internal/models"
-	tz "bug-bounty-endpoint-pinger/internal/timezone"
-	"bug-bounty-endpoint-pinger/internal/validation"
+	"w8nc/internal/models"
+	tz "w8nc/internal/timezone"
+	"w8nc/internal/validation"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"

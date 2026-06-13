@@ -111,7 +111,7 @@ restart:
 rotate-encryption-key: require-secrets
 	@command -v openssl >/dev/null 2>&1 || { printf "openssl is required to generate a new encryption key.\n" >&2; exit 1; }
 	@new_key=$$(openssl rand -base64 32); \
-	NEW_ENCRYPTION_KEY="$$new_key" $(COMPOSE) exec -T -e NEW_ENCRYPTION_KEY $(APP_SERVICE) /app/endpoint-pinger rotate-encryption-key && \
+	NEW_ENCRYPTION_KEY="$$new_key" $(COMPOSE) exec -T -e NEW_ENCRYPTION_KEY $(APP_SERVICE) /app/w8nc rotate-encryption-key && \
 	tmp=$$(mktemp .env.XXXXXX) && \
 	awk -v key="$$new_key" 'BEGIN { done=0 } /^ENCRYPTION_KEY=/ { print "ENCRYPTION_KEY=" key; done=1; next } { print } END { if (!done) print "ENCRYPTION_KEY=" key }' .env > "$$tmp" && \
 	chmod 600 "$$tmp" && \
@@ -120,7 +120,7 @@ rotate-encryption-key: require-secrets
 	printf "Encryption key rotated, .env updated, and app restarted.\n"
 
 set-password:
-	@$(COMPOSE) exec -T $(APP_SERVICE) /app/endpoint-pinger set-password
+	@$(COMPOSE) exec -T $(APP_SERVICE) /app/w8nc set-password
 	@$(COMPOSE) kill -s USR1 $(APP_SERVICE) >/dev/null
 	@printf "Login attempt lockouts cleared.\n"
 

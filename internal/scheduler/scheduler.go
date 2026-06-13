@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"bug-bounty-endpoint-pinger/internal/conditions"
-	"bug-bounty-endpoint-pinger/internal/db"
-	"bug-bounty-endpoint-pinger/internal/models"
-	"bug-bounty-endpoint-pinger/internal/notifier"
-	"bug-bounty-endpoint-pinger/internal/pinger"
+	"w8nc/internal/conditions"
+	"w8nc/internal/db"
+	"w8nc/internal/models"
+	"w8nc/internal/notifier"
+	"w8nc/internal/pinger"
 )
 
 type Service struct {

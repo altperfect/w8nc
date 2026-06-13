@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"bug-bounty-endpoint-pinger/internal/models"
+	"w8nc/internal/models"
 )
 
 var sensitiveMarkers = []string{

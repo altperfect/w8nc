@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"bug-bounty-endpoint-pinger/internal/db"
+	"w8nc/internal/db"
 
 	"golang.org/x/crypto/bcrypt"
 )

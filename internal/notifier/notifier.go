@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	secretbox "bug-bounty-endpoint-pinger/internal/crypto"
-	"bug-bounty-endpoint-pinger/internal/models"
+	secretbox "w8nc/internal/crypto"
+	"w8nc/internal/models"
 )
 
 type Notifier struct {

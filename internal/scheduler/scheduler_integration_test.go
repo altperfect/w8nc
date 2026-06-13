@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"bug-bounty-endpoint-pinger/internal/db"
-	"bug-bounty-endpoint-pinger/internal/models"
-	"bug-bounty-endpoint-pinger/internal/pinger"
-	"bug-bounty-endpoint-pinger/internal/scheduler"
+	"w8nc/internal/db"
+	"w8nc/internal/models"
+	"w8nc/internal/pinger"
+	"w8nc/internal/scheduler"
 )
 
 func TestSchedulerNotifyOnceDeactivatesAndCreatesOneEvent(t *testing.T) {

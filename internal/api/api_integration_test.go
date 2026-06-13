@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"bug-bounty-endpoint-pinger/internal/api"
-	"bug-bounty-endpoint-pinger/internal/auth"
-	"bug-bounty-endpoint-pinger/internal/config"
-	secretbox "bug-bounty-endpoint-pinger/internal/crypto"
-	"bug-bounty-endpoint-pinger/internal/db"
-	"bug-bounty-endpoint-pinger/internal/models"
+	"w8nc/internal/api"
+	"w8nc/internal/auth"
+	"w8nc/internal/config"
+	secretbox "w8nc/internal/crypto"
+	"w8nc/internal/db"
+	"w8nc/internal/models"
 )
 
 func TestEndpointTestRequestReturnsResponseMetadata(t *testing.T) {

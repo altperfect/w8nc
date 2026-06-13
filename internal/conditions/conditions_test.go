@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"bug-bounty-endpoint-pinger/internal/models"
+	"w8nc/internal/models"
 )
 
 func TestStatusCodeEqualsCanFireOnFirstPing(t *testing.T) {

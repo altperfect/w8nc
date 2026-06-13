@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	secretbox "bug-bounty-endpoint-pinger/internal/crypto"
-	"bug-bounty-endpoint-pinger/internal/models"
-	"bug-bounty-endpoint-pinger/internal/validation"
+	secretbox "w8nc/internal/crypto"
+	"w8nc/internal/models"
+	"w8nc/internal/validation"
 )
 
 type Pinger struct {
