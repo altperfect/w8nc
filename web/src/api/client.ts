@@ -73,6 +73,7 @@ export const api = {
   getLastProxy: () => request<{ available: boolean; proxy?: ProxyConfig }>('/api/proxies/last'),
   getTemplatePlaceholders: () => request<TemplatePlaceholdersResponse>('/api/template-placeholders'),
   listTags: () => request<TagsResponse>('/api/tags'),
+  deleteTag: (id: string) => request<void>(`/api/tags/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   createEndpoint: (input: EndpointInput) =>
     request<Endpoint>('/api/endpoints', { method: 'POST', body: JSON.stringify(input) }),
   testEndpointRequest: (input: EndpointInput) =>

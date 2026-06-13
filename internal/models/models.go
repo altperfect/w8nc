@@ -59,11 +59,12 @@ const (
 var AllowedTagColors = []string{"slate", "blue", "teal", "green", "amber", "rose", "violet", "gray"}
 
 type Tag struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Color     string    `json:"color"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Color         string    `json:"color"`
+	EndpointCount int       `json:"endpoint_count"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type TagInput struct {
@@ -74,6 +75,7 @@ type TagInput struct {
 type Endpoint struct {
 	ID                     string          `json:"id"`
 	Name                   *string         `json:"name,omitempty"`
+	Description            string          `json:"description"`
 	URL                    string          `json:"url"`
 	HTTPMethod             string          `json:"http_method"`
 	Headers                []Header        `json:"-"`
@@ -112,6 +114,7 @@ type Endpoint struct {
 
 type EndpointInput struct {
 	Name                 *string       `json:"name"`
+	Description          string        `json:"description"`
 	URL                  string        `json:"url"`
 	HTTPMethod           string        `json:"http_method"`
 	Headers              []HeaderInput `json:"headers"`

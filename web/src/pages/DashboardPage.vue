@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { Edit3, History, Plus, Power, RefreshCw, Search, Trash2, X } from '@lucide/vue'
+import { Edit3, FileText, History, Plus, Power, RefreshCw, Search, Trash2, X } from '@lucide/vue'
 import { api } from '../api/client'
 import EndpointForm from '../components/EndpointForm.vue'
 import type { Endpoint, EndpointCheck, EndpointInput, ScreenshotAttempt, Tag } from '../types'
@@ -39,6 +39,9 @@ const alertCount = computed(
   () => endpoints.value.filter((endpoint) => endpoint.state === 'warning' || endpoint.state === 'offline').length
 )
 const inactiveCount = computed(() => endpoints.value.filter((endpoint) => !endpoint.active).length)
+const activeMetricSelected = computed(() => filters.active === 'true' && filters.state === '')
+const inactiveMetricSelected = computed(() => filters.active === 'false' && filters.state === '')
+const attentionMetricSelected = computed(() => filters.active === '' && filters.state === 'needs_attention')
 
 function params() {
   const query = new URLSearchParams()
@@ -63,6 +66,42 @@ async function load() {
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Could not load endpoints'
   }
+}
+
+function resetFilters() {
+  filters.page = 1
+  filters.sort = 'created_desc'
+  filters.state = ''
+  filters.active = ''
+  filters.method = ''
+  filters.tag = ''
+  filters.search = ''
+}
+
+async function applyMetricFilter(metric: 'active' | 'inactive' | 'needs_attention') {
+  const selected =
+    (metric === 'active' && activeMetricSelected.value) ||
+    (metric === 'inactive' && inactiveMetricSelected.value) ||
+    (metric === 'needs_attention' && attentionMetricSelected.value)
+
+  if (selected) {
+    resetFilters()
+    await load()
+    return
+  }
+
+  filters.page = 1
+  if (metric === 'active') {
+    filters.active = 'true'
+    filters.state = ''
+  } else if (metric === 'inactive') {
+    filters.active = 'false'
+    filters.state = ''
+  } else {
+    filters.active = ''
+    filters.state = 'needs_attention'
+  }
+  await load()
 }
 
 async function loadTags() {
@@ -122,6 +161,10 @@ async function action(endpoint: Endpoint, kind: 'activate' | 'deactivate' | 'pin
   if (kind === 'deactivate') await api.deactivateEndpoint(endpoint.id)
   if (kind === 'ping') await api.pingNow(endpoint.id)
   await load()
+}
+
+async function toggleMonitoring(endpoint: Endpoint) {
+  await action(endpoint, endpoint.active ? 'deactivate' : 'activate')
 }
 
 async function showChecks(endpoint: Endpoint) {
@@ -194,6 +237,10 @@ function visibleTags(endpoint: Endpoint) {
 
 function hiddenTagCount(endpoint: Endpoint) {
   return Math.max(0, (endpoint.tags || []).length - visibleTags(endpoint).length)
+}
+
+function hiddenTags(endpoint: Endpoint) {
+  return (endpoint.tags || []).slice(3)
 }
 
 function resultLabel(state: string) {
@@ -283,18 +330,36 @@ onUnmounted(() => {
       <span>Shown</span>
       <strong>{{ shownCount }}</strong>
     </div>
-    <div class="metric">
+    <button
+      type="button"
+      class="metric metric-button"
+      :class="{ 'metric-selected': activeMetricSelected }"
+      :aria-pressed="activeMetricSelected"
+      @click="applyMetricFilter('active')"
+    >
       <span>Active</span>
       <strong>{{ activeCount }}</strong>
-    </div>
-    <div class="metric">
+    </button>
+    <button
+      type="button"
+      class="metric metric-button"
+      :class="{ 'metric-selected': inactiveMetricSelected }"
+      :aria-pressed="inactiveMetricSelected"
+      @click="applyMetricFilter('inactive')"
+    >
       <span>Deactivated</span>
       <strong>{{ inactiveCount }}</strong>
-    </div>
-    <div class="metric">
+    </button>
+    <button
+      type="button"
+      class="metric metric-button"
+      :class="{ 'metric-selected': attentionMetricSelected }"
+      :aria-pressed="attentionMetricSelected"
+      @click="applyMetricFilter('needs_attention')"
+    >
       <span>Needs attention</span>
       <strong>{{ alertCount }}</strong>
-    </div>
+    </button>
   </section>
 
   <section class="toolbar">
@@ -310,6 +375,7 @@ onUnmounted(() => {
       </select>
       <select v-model="filters.state" @change="load">
         <option value="">Last result: any</option>
+        <option value="needs_attention">Needs attention</option>
         <option value="unknown">Not checked</option>
         <option value="live">Live</option>
         <option value="warning">HTTP error</option>
@@ -355,7 +421,6 @@ onUnmounted(() => {
           <th>Method</th>
           <th>Interval</th>
           <th class="condition-cell"><span>Condition</span></th>
-          <th>Monitoring</th>
           <th class="date-cell">Last checked</th>
           <th class="date-cell">Created</th>
           <th class="date-cell">Updated</th>
@@ -368,8 +433,16 @@ onUnmounted(() => {
             <span v-if="endpoint.state !== 'unknown'" class="state-dot" :class="endpoint.state" />
             {{ resultLabel(endpoint.state) }}
           </td>
-          <td class="name-cell" data-label="Name" :title="endpoint.name || ''">
-            <span>{{ endpoint.name || '' }}</span>
+          <td class="name-cell" data-label="Name">
+            <span class="name-content">
+              <span class="endpoint-name-text" :title="endpoint.name || ''">{{ endpoint.name || '' }}</span>
+              <span v-if="endpoint.description" class="note-info">
+                <button type="button" class="icon-button note-info-button" aria-label="Show endpoint description">
+                  <FileText :size="13" />
+                </button>
+                <span class="note-tooltip" role="tooltip">{{ endpoint.description }}</span>
+              </span>
+            </span>
           </td>
           <td class="url-cell" data-label="URL" :title="endpoint.url">
             <span class="url-origin">{{ urlOrigin(endpoint.url) }}</span><span class="url-path">{{ urlPath(endpoint.url) }}</span>
@@ -377,13 +450,19 @@ onUnmounted(() => {
               <span v-for="tag in visibleTags(endpoint)" :key="tag.id || tag.name" class="tag-chip" :class="`tag-color-${tag.color}`">
                 {{ tag.name }}
               </span>
-              <span v-if="hiddenTagCount(endpoint)" class="tag-chip tag-more">+{{ hiddenTagCount(endpoint) }}</span>
+              <span v-if="hiddenTagCount(endpoint)" class="tag-chip tag-more tag-overflow" tabindex="0">
+                +{{ hiddenTagCount(endpoint) }}
+                <span class="tag-overflow-tooltip" role="tooltip">
+                  <span v-for="tag in hiddenTags(endpoint)" :key="tag.id || tag.name" class="tag-chip" :class="`tag-color-${tag.color}`">
+                    {{ tag.name }}
+                  </span>
+                </span>
+              </span>
             </span>
           </td>
           <td data-label="Method">{{ endpoint.http_method }}</td>
           <td data-label="Interval">{{ endpoint.ping_interval }}</td>
           <td class="condition-cell" data-label="Condition"><span class="condition-label">{{ conditionLabel(endpoint) }}</span></td>
-          <td data-label="Monitoring">{{ endpoint.active ? 'On' : 'Off' }}</td>
           <td class="date-cell" data-label="Last checked">{{ formatDate(endpoint.last_checked_at) }}</td>
           <td class="date-cell" data-label="Created">{{ formatDate(endpoint.created_at) }}</td>
           <td class="date-cell" data-label="Updated">{{ formatDate(endpoint.updated_at) }}</td>
@@ -392,14 +471,11 @@ onUnmounted(() => {
               <button class="icon-button" title="Edit endpoint" @click="openEdit(endpoint)"><Edit3 :size="15" /></button>
               <button class="icon-button" title="Delete endpoint" @click="openDelete(endpoint)"><Trash2 :size="15" /></button>
               <button
-                v-if="endpoint.active"
-                class="icon-button"
-                title="Turn monitoring off"
-                @click="action(endpoint, 'deactivate')"
+                class="icon-button monitoring-action"
+                :class="endpoint.active ? 'monitoring-on' : 'monitoring-off'"
+                :title="endpoint.active ? 'Turn monitoring off' : 'Turn monitoring on'"
+                @click="toggleMonitoring(endpoint)"
               >
-                <Power :size="15" />
-              </button>
-              <button v-else class="icon-button" title="Turn monitoring on" @click="action(endpoint, 'activate')">
                 <Power :size="15" />
               </button>
               <button class="icon-button" title="Ping now" @click="action(endpoint, 'ping')"><RefreshCw :size="15" /></button>
@@ -410,7 +486,7 @@ onUnmounted(() => {
           </td>
         </tr>
         <tr v-if="endpoints.length === 0">
-          <td colspan="11" class="empty-cell">
+          <td colspan="10" class="empty-cell">
             <div class="empty-state">
               <p class="eyebrow">No endpoints yet</p>
               <h3>Add your first endpoint</h3>

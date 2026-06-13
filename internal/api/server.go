@@ -127,6 +127,10 @@ func (s *Server) serveProtectedAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleListTags(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/tags/") {
+		s.handleTagPath(w, r)
+		return
+	}
 	if r.URL.Path == "/api/auth/password" {
 		if r.Method != http.MethodPut {
 			methodNotAllowed(w)
@@ -206,6 +210,24 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 		"items":  tags,
 		"colors": models.AllowedTagColors,
 	})
+}
+
+func (s *Server) handleTagPath(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/tags/")
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	if len(parts) != 1 || parts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodDelete {
+		methodNotAllowed(w)
+		return
+	}
+	if err := s.Store.DeleteTag(r.Context(), parts[0]); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleListEndpoints(w http.ResponseWriter, r *http.Request) {
@@ -586,6 +608,10 @@ func (s *Server) endpointRecord(ctx context.Context, input models.EndpointInput,
 	if err != nil {
 		return db.EndpointRecord{}, false, err
 	}
+	description := strings.TrimSpace(input.Description)
+	if len([]rune(description)) > 200 {
+		return db.EndpointRecord{}, false, fmt.Errorf("description must be 200 characters or fewer")
+	}
 	name := input.Name
 	if name != nil {
 		trimmed := strings.TrimSpace(*name)
@@ -597,7 +623,7 @@ func (s *Server) endpointRecord(ctx context.Context, input models.EndpointInput,
 	}
 	intervalChanged := existing != nil && existing.PingIntervalSeconds != intervalSeconds
 	return db.EndpointRecord{
-		Name: name, URL: url, HTTPMethod: method, Headers: headers,
+		Name: name, Description: description, URL: url, HTTPMethod: method, Headers: headers,
 		RequestBodyEnabled: input.RequestBodyEnabled, RequestBody: requestBody, Proxy: proxy,
 		PingIntervalSeconds: intervalSeconds, DeactivateAfterSeconds: deactivateAfterSeconds,
 		NotifyCondition: input.NotifyCondition, NotificationTemplate: template,

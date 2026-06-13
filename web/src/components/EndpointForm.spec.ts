@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
   testEndpointRequest: vi.fn(),
   getLastProxy: vi.fn(),
   getTemplatePlaceholders: vi.fn(),
-  listTags: vi.fn()
+  listTags: vi.fn(),
+  deleteTag: vi.fn()
 }))
 
 vi.mock('../api/client', () => ({
@@ -14,7 +15,8 @@ vi.mock('../api/client', () => ({
     testEndpointRequest: mocks.testEndpointRequest,
     getLastProxy: mocks.getLastProxy,
     getTemplatePlaceholders: mocks.getTemplatePlaceholders,
-    listTags: mocks.listTags
+    listTags: mocks.listTags,
+    deleteTag: mocks.deleteTag
   }
 }))
 
@@ -24,14 +26,16 @@ describe('EndpointForm', () => {
     mocks.getLastProxy.mockReset()
     mocks.getTemplatePlaceholders.mockReset()
     mocks.listTags.mockReset()
+    mocks.deleteTag.mockReset()
     mocks.getLastProxy.mockResolvedValue({ available: false })
     mocks.getTemplatePlaceholders.mockResolvedValue({
       items: ['url', 'checked_at', 'condition_type', 'duration_ms', 'response_body', 'response_headers']
     })
     mocks.listTags.mockResolvedValue({
-      items: [{ id: 'tag-1', name: 'prod', color: 'teal' }],
+      items: [{ id: 'tag-1', name: 'prod', color: 'teal', endpoint_count: 1 }],
       colors: ['slate', 'blue', 'teal', 'green', 'amber', 'rose', 'violet', 'gray']
     })
+    mocks.deleteTag.mockResolvedValue(undefined)
     mocks.testEndpointRequest.mockResolvedValue({
       status_code: 202,
       response_headers: {
@@ -109,6 +113,17 @@ describe('EndpointForm', () => {
     expect(wrapper.text()).toContain('interval must match digits plus unit')
   })
 
+  it('collapses the description field by default and updates the remaining symbol count', async () => {
+    const wrapper = mount(EndpointForm)
+
+    expect((wrapper.get('.description-field').element as HTMLDetailsElement).open).toBe(false)
+    expect(wrapper.text()).toContain('200/200 symbols available')
+
+    await wrapper.get('textarea[aria-label="Description"]').setValue('x'.repeat(75))
+
+    expect(wrapper.text()).toContain('125/200 symbols available')
+  })
+
   it('loads notification template placeholders for the tooltip', async () => {
     const wrapper = mount(EndpointForm)
     await flushPromises()
@@ -139,6 +154,7 @@ describe('EndpointForm', () => {
     const wrapper = mount(EndpointForm)
     await flushPromises()
 
+    await wrapper.get('textarea[placeholder="Short note about this endpoint"]').setValue('Watch the login path')
     await wrapper.get('input[aria-label="Tag name"]').setValue('Prod')
     await wrapper.get('button[aria-label="Teal"]').trigger('click')
     await wrapper.findAll('button').find((button) => button.text() === 'Add tag')?.trigger('click')
@@ -149,9 +165,41 @@ describe('EndpointForm', () => {
 
     expect(wrapper.emitted('save')?.[0]?.[0]).toEqual(
       expect.objectContaining({
+        description: 'Watch the login path',
         tags: [{ name: 'prod', color: 'teal' }]
       })
     )
+  })
+
+  it('confirms before deleting an in-use reusable tag', async () => {
+    const wrapper = mount(EndpointForm)
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="Delete prod"]').trigger('click')
+
+    expect(wrapper.text()).toContain('This tag is being used with other endpoints. Are you sure?')
+    expect(mocks.deleteTag).not.toHaveBeenCalled()
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Delete tag')?.trigger('click')
+    await flushPromises()
+
+    expect(mocks.deleteTag).toHaveBeenCalledWith('tag-1')
+    expect(wrapper.text()).not.toContain('This tag is being used with other endpoints')
+  })
+
+  it('deletes an unused reusable tag without confirmation', async () => {
+    mocks.listTags.mockResolvedValueOnce({
+      items: [{ id: 'tag-unused', name: 'old', color: 'gray', endpoint_count: 0 }],
+      colors: ['slate', 'blue', 'teal', 'green', 'amber', 'rose', 'violet', 'gray']
+    })
+    const wrapper = mount(EndpointForm)
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="Delete old"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.deleteTag).toHaveBeenCalledWith('tag-unused')
+    expect(wrapper.text()).not.toContain('This tag is being used with other endpoints')
   })
 
   it('reuses the last configured SOCKS5 proxy', async () => {
@@ -223,6 +271,7 @@ describe('EndpointForm', () => {
         endpoint: {
           id: 'endpoint-1',
           name: 'API',
+          description: '',
           url: 'https://example.com/api',
           http_method: 'POST',
           headers: [],

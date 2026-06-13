@@ -22,6 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 CREATE TABLE IF NOT EXISTS endpoints (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NULL,
+    description TEXT NOT NULL DEFAULT '',
     url TEXT NOT NULL,
     http_method TEXT NOT NULL DEFAULT 'GET',
     headers JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -49,7 +50,8 @@ CREATE TABLE IF NOT EXISTS endpoints (
     notified_at TIMESTAMPTZ NULL,
     deactivated_reason TEXT NULL,
     locked_until TIMESTAMPTZ NULL,
-    version BIGINT NOT NULL DEFAULT 1
+    version BIGINT NOT NULL DEFAULT 1,
+    CHECK (char_length(description) <= 200)
 );
 
 CREATE INDEX IF NOT EXISTS idx_endpoints_active_next_run
@@ -82,7 +84,7 @@ CREATE TABLE IF NOT EXISTS tags (
 
 CREATE TABLE IF NOT EXISTS endpoint_tags (
     endpoint_id UUID NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
-    tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE RESTRICT,
+    tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (endpoint_id, tag_id)
 );

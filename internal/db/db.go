@@ -308,8 +308,12 @@ func endpointWhere(params ListEndpointsParams) (string, []any) {
 	var clauses []string
 	var args []any
 	if params.State != "" {
-		args = append(args, params.State)
-		clauses = append(clauses, fmt.Sprintf("state=$%d", len(args)))
+		if params.State == "needs_attention" {
+			clauses = append(clauses, "state IN ('warning', 'offline')")
+		} else {
+			args = append(args, params.State)
+			clauses = append(clauses, fmt.Sprintf("state=$%d", len(args)))
+		}
 	}
 	if params.Active != nil {
 		args = append(args, *params.Active)
@@ -340,6 +344,7 @@ func endpointWhere(params ListEndpointsParams) (string, []any) {
 
 type EndpointRecord struct {
 	Name                   *string
+	Description            string
 	URL                    string
 	HTTPMethod             string
 	Headers                []models.Header
@@ -382,10 +387,10 @@ func (s *Store) CreateEndpoint(ctx context.Context, record EndpointRecord) (mode
 	defer func() { _ = tx.Rollback(ctx) }()
 	var id string
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO endpoints (name, url, http_method, headers, request_body_enabled, request_body, proxy_enabled, proxy_address, proxy_username, proxy_password_encrypted, ping_interval_seconds, deactivate_after_seconds, notify_condition, notification_template, screenshot_on_match, active, state, next_run_at, deactivate_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		INSERT INTO endpoints (name, description, url, http_method, headers, request_body_enabled, request_body, proxy_enabled, proxy_address, proxy_username, proxy_password_encrypted, ping_interval_seconds, deactivate_after_seconds, notify_condition, notification_template, screenshot_on_match, active, state, next_run_at, deactivate_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		RETURNING id::text`,
-		record.Name, record.URL, record.HTTPMethod, headersJSON, record.RequestBodyEnabled, record.RequestBody,
+		record.Name, record.Description, record.URL, record.HTTPMethod, headersJSON, record.RequestBodyEnabled, record.RequestBody,
 		record.Proxy.Enabled, nullString(record.Proxy.Address), nullString(record.Proxy.Username),
 		record.Proxy.PasswordEncrypted, record.PingIntervalSeconds,
 		record.DeactivateAfterSeconds, conditionJSON, record.NotificationTemplate, record.ScreenshotOnMatch,
@@ -454,17 +459,17 @@ func (s *Store) UpdateEndpoint(ctx context.Context, id string, record EndpointRe
 	var updatedID string
 	if err := tx.QueryRow(ctx, `
 		UPDATE endpoints
-		SET name=$2, url=$3, http_method=$4, headers=$5, request_body_enabled=$6,
-		    request_body=$7, proxy_enabled=$8, proxy_address=$9, proxy_username=$10,
-		    proxy_password_encrypted=$11, ping_interval_seconds=$12,
-		    deactivate_after_seconds=$13, notify_condition=$14,
-		    notification_template=$15, screenshot_on_match=$16, active=$17,
-		    state=$18, next_run_at=$19, deactivate_at=$20,
-		    deactivated_reason=$21, notified_at=$22,
+		SET name=$2, description=$3, url=$4, http_method=$5, headers=$6, request_body_enabled=$7,
+		    request_body=$8, proxy_enabled=$9, proxy_address=$10, proxy_username=$11,
+		    proxy_password_encrypted=$12, ping_interval_seconds=$13,
+		    deactivate_after_seconds=$14, notify_condition=$15,
+		    notification_template=$16, screenshot_on_match=$17, active=$18,
+		    state=$19, next_run_at=$20, deactivate_at=$21,
+		    deactivated_reason=$22, notified_at=$23,
 		    updated_at=now(), version=version+1, locked_until=NULL
 		WHERE id=$1
 		RETURNING id::text`,
-		id, record.Name, record.URL, record.HTTPMethod, headersJSON, record.RequestBodyEnabled,
+		id, record.Name, record.Description, record.URL, record.HTTPMethod, headersJSON, record.RequestBodyEnabled,
 		record.RequestBody, record.Proxy.Enabled, nullString(record.Proxy.Address),
 		nullString(record.Proxy.Username), record.Proxy.PasswordEncrypted, record.PingIntervalSeconds,
 		record.DeactivateAfterSeconds, conditionJSON, record.NotificationTemplate, record.ScreenshotOnMatch, record.Active,
@@ -494,9 +499,11 @@ func (s *Store) DeleteEndpoint(ctx context.Context, id string) error {
 
 func (s *Store) ListTags(ctx context.Context) ([]models.Tag, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT id::text, name, color, created_at, updated_at
-		FROM tags
-		ORDER BY name ASC`)
+		SELECT t.id::text, t.name, t.color, count(et.endpoint_id)::int, t.created_at, t.updated_at
+		FROM tags t
+		LEFT JOIN endpoint_tags et ON et.tag_id=t.id
+		GROUP BY t.id, t.name, t.color, t.created_at, t.updated_at
+		ORDER BY t.name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -504,12 +511,23 @@ func (s *Store) ListTags(ctx context.Context) ([]models.Tag, error) {
 	tags := make([]models.Tag, 0)
 	for rows.Next() {
 		var tag models.Tag
-		if err := rows.Scan(&tag.ID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt); err != nil {
+		if err := rows.Scan(&tag.ID, &tag.Name, &tag.Color, &tag.EndpointCount, &tag.CreatedAt, &tag.UpdatedAt); err != nil {
 			return nil, err
 		}
 		tags = append(tags, tag)
 	}
 	return tags, rows.Err()
+}
+
+func (s *Store) DeleteTag(ctx context.Context, id string) error {
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM tags WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func syncEndpointTags(ctx context.Context, tx pgx.Tx, endpointID string, tags []models.TagInput) error {
@@ -1146,7 +1164,7 @@ func marshalJSON(headers []models.Header, condition models.Condition) ([]byte, [
 }
 
 const endpointColumns = `
-	id::text, name, url, http_method, headers, request_body_enabled, request_body, proxy_enabled, proxy_address,
+	id::text, name, description, url, http_method, headers, request_body_enabled, request_body, proxy_enabled, proxy_address,
 	proxy_username, proxy_password_encrypted, ping_interval_seconds, notify_condition,
 	deactivate_after_seconds, notify_once, notification_template, screenshot_on_match, active, state, created_at, updated_at,
 	last_checked_at, next_run_at, deactivate_at, last_status_code, last_response_length,
@@ -1204,7 +1222,7 @@ func scanEndpoint(row scanner) (models.Endpoint, error) {
 	var lockedUntil sql.NullTime
 	var tagsJSON []byte
 	err := row.Scan(
-		&endpoint.ID, &name, &endpoint.URL, &endpoint.HTTPMethod, &headersJSON,
+		&endpoint.ID, &name, &endpoint.Description, &endpoint.URL, &endpoint.HTTPMethod, &headersJSON,
 		&endpoint.RequestBodyEnabled, &endpoint.RequestBody,
 		&endpoint.Proxy.Enabled, &proxyAddress, &proxyUsername, &proxyPassword,
 		&endpoint.PingIntervalSeconds, &conditionJSON, &deactivateAfter,

@@ -163,6 +163,7 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	masked := true
 	createBody := models.EndpointInput{
 		Name:               stringPtr("Admin"),
+		Description:        "Admin login surface",
 		URL:                "https://example.com/admin",
 		HTTPMethod:         "GET",
 		RequestBodyEnabled: true,
@@ -208,6 +209,9 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	if !created.ScreenshotOnMatch {
 		t.Fatalf("screenshot flag was not persisted on create")
 	}
+	if created.Description != "Admin login surface" {
+		t.Fatalf("description was not persisted on create: %q", created.Description)
+	}
 	if len(created.Tags) != 2 || created.Tags[0].Name != "auth" || created.Tags[1].Name != "prod" {
 		t.Fatalf("tags were not normalized/persisted on create: %+v", created.Tags)
 	}
@@ -221,6 +225,9 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	}
 	if !fetched.RequestBodyEnabled || fetched.RequestBody != createBody.RequestBody {
 		t.Fatalf("request body was not returned on get: enabled=%v body=%q", fetched.RequestBodyEnabled, fetched.RequestBody)
+	}
+	if fetched.Description != createBody.Description {
+		t.Fatalf("description was not returned on get: %q", fetched.Description)
 	}
 	if len(fetched.Tags) != 2 || fetched.Tags[0].Color != "blue" || fetched.Tags[1].Color != "teal" {
 		t.Fatalf("tags were not returned on get: %+v", fetched.Tags)
@@ -240,6 +247,20 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	}](t, server, http.MethodGet, "/api/tags", nil, http.StatusOK)
 	if len(tagCatalog.Items) != 2 || len(tagCatalog.Colors) == 0 {
 		t.Fatalf("tag catalog was not returned: %+v", tagCatalog)
+	}
+	if tagCatalog.Items[0].EndpointCount != 1 || tagCatalog.Items[1].EndpointCount != 1 {
+		t.Fatalf("tag endpoint counts were not returned: %+v", tagCatalog.Items)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tags/"+tagCatalog.Items[0].ID, nil)
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("delete tag status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	fetched = doJSON[models.Endpoint](t, server, http.MethodGet, "/api/endpoints/"+created.ID, nil, http.StatusOK)
+	if len(fetched.Tags) != 1 || fetched.Tags[0].Name != "prod" {
+		t.Fatalf("tag deletion did not cascade from endpoint: %+v", fetched.Tags)
 	}
 
 	createBody.PingInterval = "1m"
@@ -266,8 +287,15 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 		t.Fatalf("unexpected invalid tag error: %s", invalidTag.Body.String())
 	}
 
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodDelete, "/api/endpoints/"+created.ID, nil)
+	createBody.Tags = nil
+	createBody.Description = strings.Repeat("x", 201)
+	invalidDescription := postJSON(t, server, "/api/endpoints", createBody, http.StatusBadRequest)
+	if !strings.Contains(invalidDescription.Body.String(), "description") {
+		t.Fatalf("unexpected invalid description error: %s", invalidDescription.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/endpoints/"+created.ID, nil)
 	server.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("delete status=%d body=%s", recorder.Code, recorder.Body.String())

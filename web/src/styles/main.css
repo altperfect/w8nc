@@ -339,6 +339,23 @@ th {
   background: #0e1013;
 }
 
+.metric-button {
+  width: 100%;
+  min-height: 0;
+  justify-content: stretch;
+  text-align: left;
+}
+
+.metric-button:hover {
+  border-color: #2c333c;
+  background: #111418;
+}
+
+.metric-button.metric-selected {
+  border-color: #3a414b;
+  background: #12161a;
+}
+
 .metric span {
   color: #68717c;
   font-size: 0.68rem;
@@ -398,12 +415,65 @@ th {
   word-break: normal;
 }
 
-.name-cell span {
+.name-content {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  max-width: 100%;
+}
+
+.endpoint-name-text {
   display: block;
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.note-info {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.note-info-button {
+  width: 1.35rem;
+  min-width: 1.35rem;
+  min-height: 1.35rem;
+  color: #7f8791;
+}
+
+.note-tooltip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.34rem);
+  z-index: 9;
+  width: min(16rem, calc(100vw - 2rem));
+  padding: 0.56rem 0.62rem;
+  border: 1px solid #242930;
+  border-radius: 6px;
+  background: #0f1114;
+  color: #c3c8ce;
+  box-shadow: 0 14px 30px rgb(0 0 0 / 0.34);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: break-word;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+.note-info:hover .note-tooltip,
+.note-info:focus-within .note-tooltip {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .url-cell {
@@ -434,21 +504,23 @@ th {
 }
 
 .condition-cell {
-  width: 6.4rem;
-  text-align: center;
+  width: 6.8rem;
+  padding-left: 0.36rem;
+  padding-right: 0.36rem;
+  text-align: left;
 }
 
 .condition-cell > span {
   display: block;
-  width: max-content;
-  max-width: 5.8rem;
-  margin: 0 auto;
-  text-align: center;
+  width: auto;
+  max-width: 6.1rem;
+  margin: 0;
+  text-align: left;
 }
 
 .condition-label {
   line-height: 1.35;
-  text-wrap: balance;
+  text-wrap: auto;
 }
 
 .row-actions {
@@ -461,6 +533,22 @@ th {
 .row-actions .icon-button {
   width: 1.82rem;
   min-width: 1.82rem;
+}
+
+.monitoring-action.monitoring-on {
+  border-color: #2d3b32;
+  background:
+    linear-gradient(135deg, rgb(77 128 96 / 0.12), rgb(17 19 22 / 0.82)),
+    #111316;
+  color: #9fb4a7;
+}
+
+.monitoring-action.monitoring-off {
+  border-color: #423134;
+  background:
+    linear-gradient(135deg, rgb(132 83 87 / 0.12), rgb(17 19 22 / 0.82)),
+    #111316;
+  color: #baa0a2;
 }
 
 .actions-cell {
@@ -634,6 +722,43 @@ th {
   font-size: 0.72rem;
 }
 
+.description-field {
+  display: block;
+  padding: 0.5rem 0.56rem;
+  border: 1px solid #242930;
+  border-radius: 6px;
+  background: #0f1114;
+}
+
+.description-field summary {
+  cursor: pointer;
+  color: #9aa2ab;
+  font-size: 0.78rem;
+}
+
+.description-summary-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: calc(100% - 1.15rem);
+  gap: 0.6rem;
+  vertical-align: middle;
+}
+
+.description-summary-label {
+  color: #d7dbe0;
+}
+
+.description-counter {
+  color: #68717c;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.description-field textarea {
+  margin-top: 0.52rem;
+}
+
 .tags-field {
   display: grid;
   gap: 0.46rem;
@@ -716,10 +841,58 @@ button.tag-chip {
   color: inherit;
 }
 
+.tag-chip .tag-chip-label {
+  width: auto;
+  min-width: 0;
+  min-height: 1rem;
+  max-width: 8rem;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  white-space: nowrap;
+}
+
 .tag-more {
   --tag-bg: #11151a;
   --tag-border: #242930;
   --tag-fg: #7f8791;
+}
+
+.tag-overflow {
+  position: relative;
+  overflow: visible;
+}
+
+.tag-overflow-tooltip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 0.32rem);
+  z-index: 9;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  width: max-content;
+  max-width: min(18rem, calc(100vw - 2rem));
+  padding: 0.56rem;
+  border: 1px solid #242930;
+  border-radius: 6px;
+  background: #0f1114;
+  box-shadow: 0 14px 30px rgb(0 0 0 / 0.34);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+.tag-overflow:hover .tag-overflow-tooltip,
+.tag-overflow:focus-within .tag-overflow-tooltip,
+.tag-overflow:focus .tag-overflow-tooltip {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .tag-color-slate {
@@ -1350,7 +1523,7 @@ button.tag-chip {
     word-break: normal;
   }
 
-  .name-cell span {
+  .endpoint-name-text {
     white-space: normal;
     overflow-wrap: break-word;
     word-break: normal;

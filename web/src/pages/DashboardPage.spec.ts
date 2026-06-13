@@ -42,6 +42,7 @@ describe('DashboardPage', () => {
         {
           id: 'endpoint-1',
           name: 'Admin panel',
+          description: 'Watch this endpoint after deploys',
           url: 'https://example.com/admin',
           http_method: 'GET',
           headers: [],
@@ -53,7 +54,12 @@ describe('DashboardPage', () => {
           notify_once: true,
           notification_template: '',
           screenshot_on_match: false,
-          tags: [{ id: 'tag-1', name: 'prod', color: 'teal' }],
+          tags: [
+            { id: 'tag-1', name: 'prod', color: 'teal' },
+            { id: 'tag-2', name: 'auth', color: 'blue' },
+            { id: 'tag-3', name: 'external', color: 'gray' },
+            { id: 'tag-4', name: 'slow', color: 'amber' }
+          ],
           active: true,
           state: 'unknown',
           created_at: '2026-06-12T00:00:00Z',
@@ -66,7 +72,7 @@ describe('DashboardPage', () => {
       total: 1
     })
     mocks.listTags.mockResolvedValue({
-      items: [{ id: 'tag-1', name: 'prod', color: 'teal' }],
+      items: [{ id: 'tag-1', name: 'prod', color: 'teal', endpoint_count: 1 }],
       colors: ['slate', 'blue', 'teal', 'green', 'amber', 'rose', 'violet', 'gray']
     })
     mocks.listChecks.mockResolvedValue({ items: [], page: 1, page_size: 20, total: 0 })
@@ -80,6 +86,12 @@ describe('DashboardPage', () => {
     expect(wrapper.find('.url-origin').text()).toBe('https://example.com')
     expect(wrapper.find('.url-path').text()).toBe('/admin')
     expect(wrapper.find('.tag-chip').text()).toContain('prod')
+    expect(wrapper.find('.note-info').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Watch this endpoint after deploys')
+    expect(wrapper.find('.tag-overflow').text()).toContain('+1')
+    expect(wrapper.find('.tag-overflow-tooltip').text()).toContain('slow')
+    expect(wrapper.find('th:nth-child(7)').text()).not.toBe('Monitoring')
+    expect(wrapper.find('.monitoring-action.monitoring-on').exists()).toBe(true)
   })
 
   it('filters endpoints by tag', async () => {
@@ -92,6 +104,43 @@ describe('DashboardPage', () => {
     const calls = mocks.listEndpoints.mock.calls
     const params = calls[calls.length - 1][0] as URLSearchParams
     expect(params.get('tag')).toBe('prod')
+  })
+
+  it('applies metric tile filters', async () => {
+    const wrapper = mount(DashboardPage)
+    await flushPromises()
+
+    const metricButtons = wrapper.findAll('.metric-button')
+
+    await metricButtons[0].trigger('click')
+    await flushPromises()
+    let params = mocks.listEndpoints.mock.calls.at(-1)?.[0] as URLSearchParams
+    expect(params.get('active')).toBe('true')
+    expect(params.get('state')).toBeNull()
+
+    await metricButtons[1].trigger('click')
+    await flushPromises()
+    params = mocks.listEndpoints.mock.calls.at(-1)?.[0] as URLSearchParams
+    expect(params.get('active')).toBe('false')
+    expect(params.get('state')).toBeNull()
+
+    await metricButtons[2].trigger('click')
+    await flushPromises()
+    params = mocks.listEndpoints.mock.calls.at(-1)?.[0] as URLSearchParams
+    expect(params.get('active')).toBeNull()
+    expect(params.get('state')).toBe('needs_attention')
+
+    await wrapper.get('input[placeholder="Search by URL or name"]').setValue('api')
+    await wrapper.findAll('select').find((select) => select.text().includes('Any method'))?.setValue('POST')
+    await wrapper.findAll('select').find((select) => select.text().includes('Newest created'))?.setValue('updated_desc')
+    await metricButtons[2].trigger('click')
+    await flushPromises()
+    params = mocks.listEndpoints.mock.calls.at(-1)?.[0] as URLSearchParams
+    expect(params.get('active')).toBeNull()
+    expect(params.get('state')).toBeNull()
+    expect(params.get('method')).toBeNull()
+    expect(params.get('search')).toBeNull()
+    expect(params.get('sort')).toBe('created_desc')
   })
 
   it('renders not checked without a state dot', async () => {

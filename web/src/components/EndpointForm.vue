@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { Info, Send, X } from '@lucide/vue'
+import { Info, Send, Trash2, X } from '@lucide/vue'
 import { api } from '../api/client'
 import HeaderEditor from './HeaderEditor.vue'
 import type { ConditionType, Endpoint, EndpointInput, EndpointTestResult, HeaderValue, ProxyConfig, Tag } from '../types'
@@ -21,6 +21,7 @@ type TagDraft = {
 
 const props = defineProps<{ endpoint?: Endpoint | null; error?: string }>()
 const emit = defineEmits<{ save: [EndpointInput]; cancel: [] }>()
+const descriptionLimit = 200
 
 const defaultTemplate = `[{{state}}] {{method}} {{url}}
 Condition: {{condition_type}}
@@ -38,6 +39,7 @@ const durationUnits: { value: DurationUnit; label: string }[] = [
 
 const state = reactive<EndpointInput>({
   name: props.endpoint?.name || '',
+  description: props.endpoint?.description || '',
   url: props.endpoint?.url || '',
   http_method: props.endpoint?.http_method || 'GET',
   headers: props.endpoint ? props.endpoint.headers.map((h) => ({ ...h })) : ([] as HeaderValue[]),
@@ -69,6 +71,8 @@ const availableTags = ref<Tag[]>([])
 const tagColors = ref<string[]>(['slate', 'blue', 'teal', 'green', 'amber', 'rose', 'violet', 'gray'])
 const tagDraft = reactive<TagDraft>({ name: '', color: 'slate' })
 const tagError = ref('')
+const deletingTagID = ref('')
+const tagDeleteTarget = ref<Tag | null>(null)
 let proxyReuseTimer: number | undefined
 
 const conditionType = computed({
@@ -100,6 +104,7 @@ const lastProxyTarget = computed(() => {
 })
 const screenshotSupported = computed(() => state.http_method.toUpperCase() === 'GET')
 if (!screenshotSupported.value) state.screenshot_on_match = false
+const descriptionRemaining = computed(() => Math.max(0, descriptionLimit - String(state.description || '').length))
 const tagSuggestions = computed(() =>
   availableTags.value
     .filter((tag) => !state.tags.some((selected) => selected.name === tag.name))
@@ -195,6 +200,7 @@ function currentInput(): EndpointInput {
   return {
     ...state,
     name: state.name ? String(state.name).trim() : null,
+    description: String(state.description || '').trim(),
     http_method: state.http_method.toUpperCase(),
     request_body_enabled: Boolean(state.request_body_enabled),
     request_body: state.request_body_enabled ? state.request_body || '' : '',
@@ -258,6 +264,36 @@ function addTag(tag: { name: string; color: string }, clearDraft = false) {
 
 function removeTag(name: string) {
   state.tags = state.tags.filter((tag) => tag.name !== name)
+}
+
+async function deleteReusableTag(tag: Tag) {
+  if (!tag.id || deletingTagID.value) return
+  if ((tag.endpoint_count || 0) > 0) {
+    tagDeleteTarget.value = tag
+    return
+  }
+  await confirmDeleteReusableTag(tag)
+}
+
+function cancelDeleteReusableTag() {
+  if (deletingTagID.value) return
+  tagDeleteTarget.value = null
+}
+
+async function confirmDeleteReusableTag(tag = tagDeleteTarget.value) {
+  if (!tag?.id || deletingTagID.value) return
+  deletingTagID.value = tag.id
+  tagError.value = ''
+  try {
+    await api.deleteTag(tag.id)
+    availableTags.value = availableTags.value.filter((item) => item.id !== tag.id)
+    state.tags = state.tags.filter((item) => item.name !== tag.name)
+    tagDeleteTarget.value = null
+  } catch (err) {
+    tagError.value = err instanceof Error ? err.message : 'Could not delete tag'
+  } finally {
+    deletingTagID.value = ''
+  }
 }
 
 function tagColorLabel(color: string) {
@@ -391,6 +427,21 @@ async function testRequest() {
         URL
         <input v-model="state.url" required placeholder="https://example.com/admin" />
       </label>
+      <details class="description-field wide">
+        <summary>
+          <span class="description-summary-content">
+            <span class="description-summary-label">Description</span>
+            <span class="description-counter">{{ descriptionRemaining }}/{{ descriptionLimit }} symbols available</span>
+          </span>
+        </summary>
+        <textarea
+          v-model="state.description"
+          aria-label="Description"
+          rows="3"
+          :maxlength="descriptionLimit"
+          placeholder="Short note about this endpoint"
+        />
+      </details>
       <div class="tags-field wide">
         <div class="field-heading">
           <span>Tags</span>
@@ -430,16 +481,22 @@ async function testRequest() {
         </div>
         <div v-if="tagSuggestions.length" class="tag-suggestions">
           <span>Reuse</span>
-          <button
+          <span
             v-for="tag in tagSuggestions"
             :key="tag.id || tag.name"
-            type="button"
             class="tag-chip"
             :class="`tag-color-${tag.color}`"
-            @click="addTag(tag)"
           >
-            {{ tag.name }}
-          </button>
+            <button type="button" class="tag-chip-label" @click="addTag(tag)">{{ tag.name }}</button>
+            <button
+              type="button"
+              :aria-label="`Delete ${tag.name}`"
+              :disabled="deletingTagID === tag.id"
+              @click.stop="deleteReusableTag(tag)"
+            >
+              <X :size="12" />
+            </button>
+          </span>
         </div>
         <p v-if="tagError" class="error compact-error">{{ tagError }}</p>
       </div>
@@ -547,6 +604,38 @@ async function testRequest() {
           <button type="button" class="primary" @click="reuseLastProxy">Yes</button>
           <button type="button" class="ghost" @click="hideProxyReusePrompt">No</button>
         </div>
+      </div>
+    </Transition>
+
+    <Transition name="fade">
+      <div v-if="tagDeleteTarget" class="modal-backdrop" @click.self="cancelDeleteReusableTag">
+        <section class="modal panel confirmation-modal" role="alertdialog" aria-modal="true" aria-labelledby="tag-delete-title">
+          <header class="modal-header">
+            <h2 id="tag-delete-title">Delete tag</h2>
+            <button
+              type="button"
+              class="icon-button"
+              title="Close"
+              :disabled="Boolean(deletingTagID)"
+              @click="cancelDeleteReusableTag"
+            >
+              <X :size="16" />
+            </button>
+          </header>
+          <div class="modal-body confirmation-body">
+            <div>
+              <p class="confirmation-title">{{ tagDeleteTarget.name }}</p>
+              <p class="muted">This tag is being used with other endpoints. Are you sure?</p>
+            </div>
+            <footer class="modal-actions">
+              <button type="button" :disabled="Boolean(deletingTagID)" @click="cancelDeleteReusableTag">Cancel</button>
+              <button type="button" class="danger-button" :disabled="Boolean(deletingTagID)" @click="confirmDeleteReusableTag()">
+                <Trash2 :size="14" />
+                {{ deletingTagID ? 'Deleting...' : 'Delete tag' }}
+              </button>
+            </footer>
+          </div>
+        </section>
       </div>
     </Transition>
 
