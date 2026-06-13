@@ -31,6 +31,8 @@ type RuntimeResume struct {
 	ExtendedEndpoints int64
 }
 
+var ErrInvalidState = errors.New("invalid state")
+
 func Connect(ctx context.Context, databaseURL string) (*Store, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
@@ -337,6 +339,7 @@ type EndpointRecord struct {
 	DeactivateAfterSeconds *int
 	NotifyCondition        models.Condition
 	NotificationTemplate   string
+	ScreenshotOnMatch      bool
 	Active                 bool
 }
 
@@ -357,13 +360,14 @@ func (s *Store) CreateEndpoint(ctx context.Context, record EndpointRecord) (mode
 		state = "deactivated"
 	}
 	row := s.Pool.QueryRow(ctx, `
-		INSERT INTO endpoints (name, url, http_method, headers, request_body_enabled, request_body, proxy_enabled, proxy_address, proxy_username, proxy_password_encrypted, ping_interval_seconds, deactivate_after_seconds, notify_condition, notification_template, active, state, next_run_at, deactivate_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+		INSERT INTO endpoints (name, url, http_method, headers, request_body_enabled, request_body, proxy_enabled, proxy_address, proxy_username, proxy_password_encrypted, ping_interval_seconds, deactivate_after_seconds, notify_condition, notification_template, screenshot_on_match, active, state, next_run_at, deactivate_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 		RETURNING `+endpointColumns,
 		record.Name, record.URL, record.HTTPMethod, headersJSON, record.RequestBodyEnabled, record.RequestBody,
 		record.Proxy.Enabled, nullString(record.Proxy.Address), nullString(record.Proxy.Username),
 		record.Proxy.PasswordEncrypted, record.PingIntervalSeconds,
-		record.DeactivateAfterSeconds, conditionJSON, record.NotificationTemplate, record.Active, state, nextRun, deactivateAt)
+		record.DeactivateAfterSeconds, conditionJSON, record.NotificationTemplate, record.ScreenshotOnMatch,
+		record.Active, state, nextRun, deactivateAt)
 	return scanEndpoint(row)
 }
 
@@ -413,15 +417,16 @@ func (s *Store) UpdateEndpoint(ctx context.Context, id string, record EndpointRe
 		    request_body=$7, proxy_enabled=$8, proxy_address=$9, proxy_username=$10,
 		    proxy_password_encrypted=$11, ping_interval_seconds=$12,
 		    deactivate_after_seconds=$13, notify_condition=$14,
-		    notification_template=$15, active=$16, state=$17, next_run_at=$18,
-		    deactivate_at=$19, deactivated_reason=$20, notified_at=$21,
+		    notification_template=$15, screenshot_on_match=$16, active=$17,
+		    state=$18, next_run_at=$19, deactivate_at=$20,
+		    deactivated_reason=$21, notified_at=$22,
 		    updated_at=now(), version=version+1, locked_until=NULL
 		WHERE id=$1
 		RETURNING `+endpointColumns,
 		id, record.Name, record.URL, record.HTTPMethod, headersJSON, record.RequestBodyEnabled,
 		record.RequestBody, record.Proxy.Enabled, nullString(record.Proxy.Address),
 		nullString(record.Proxy.Username), record.Proxy.PasswordEncrypted, record.PingIntervalSeconds,
-		record.DeactivateAfterSeconds, conditionJSON, record.NotificationTemplate, record.Active,
+		record.DeactivateAfterSeconds, conditionJSON, record.NotificationTemplate, record.ScreenshotOnMatch, record.Active,
 		state, nextRun, deactivateAt, reason, notifiedAt)
 	return scanEndpoint(row)
 }
@@ -594,6 +599,13 @@ func (s *Store) RecordPingResult(ctx context.Context, endpoint models.Endpoint, 
 		if _, err := tx.Exec(ctx, `UPDATE endpoint_checks SET notification_event_id=$1 WHERE id=$2`, eventID, checkID); err != nil {
 			return "", err
 		}
+		if endpoint.ScreenshotOnMatch {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO screenshot_attempts (endpoint_id, endpoint_check_id, notification_event_id, status)
+				VALUES ($1, $2, $3, 'pending')`, endpoint.ID, checkID, eventID); err != nil {
+				return "", err
+			}
+		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE endpoints
 			SET active=FALSE, state='deactivated', last_checked_at=$2, last_status_code=$3,
@@ -678,7 +690,171 @@ func (s *Store) ListChecks(ctx context.Context, endpointID string, page, pageSiz
 		check.NotificationEventID = stringPtrFromNull(eventID)
 		checks = append(checks, check)
 	}
-	return checks, total, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	if err := s.attachScreenshotAttempts(ctx, endpointID, checks); err != nil {
+		return nil, 0, err
+	}
+	return checks, total, nil
+}
+
+func (s *Store) attachScreenshotAttempts(ctx context.Context, endpointID string, checks []models.EndpointCheck) error {
+	if len(checks) == 0 {
+		return nil
+	}
+	checkIDs := make([]string, 0, len(checks))
+	checkIndex := make(map[string]int, len(checks))
+	for i, check := range checks {
+		checkIDs = append(checkIDs, check.ID)
+		checkIndex[check.ID] = i
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id::text, endpoint_id::text, endpoint_check_id::text, notification_event_id::text,
+		       status, error, image_path, image_content_type, image_size_bytes,
+		       capture_started_at, capture_finished_at, telegram_sent_at, created_at, updated_at
+		FROM screenshot_attempts
+		WHERE endpoint_id=$1
+		  AND endpoint_check_id::text = ANY($2::text[])
+		ORDER BY created_at ASC`, endpointID, checkIDs)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		attempt, err := scanScreenshotAttempt(rows)
+		if err != nil {
+			return err
+		}
+		if i, ok := checkIndex[attempt.EndpointCheckID]; ok {
+			checks[i].ScreenshotAttempts = append(checks[i].ScreenshotAttempts, attempt.ScreenshotAttempt)
+		}
+	}
+	return rows.Err()
+}
+
+func (s *Store) DueScreenshotAttempts(ctx context.Context, limit int) ([]models.ScreenshotAttemptRecord, error) {
+	if limit <= 0 {
+		limit = 1
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT sa.id::text, sa.endpoint_id::text, sa.endpoint_check_id::text, sa.notification_event_id::text,
+		       sa.status, sa.error, sa.image_path, sa.image_content_type, sa.image_size_bytes,
+		       sa.capture_started_at, sa.capture_finished_at, sa.telegram_sent_at, sa.created_at, sa.updated_at
+		FROM screenshot_attempts sa
+		JOIN notification_events ne ON ne.id=sa.notification_event_id
+		WHERE sa.status='pending'
+		  AND ne.status='sent'
+		ORDER BY sa.created_at ASC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	attempts := make([]models.ScreenshotAttemptRecord, 0)
+	for rows.Next() {
+		attempt, err := scanScreenshotAttempt(rows)
+		if err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, attempt)
+	}
+	return attempts, rows.Err()
+}
+
+func (s *Store) MarkScreenshotCapturing(ctx context.Context, id string) (bool, error) {
+	tag, err := s.Pool.Exec(ctx, `
+		UPDATE screenshot_attempts
+		SET status='capturing', capture_started_at=now(), error=NULL, updated_at=now()
+		WHERE id=$1 AND status='pending'`, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (s *Store) MarkScreenshotSucceeded(ctx context.Context, id, imagePath, contentType string, size int64) error {
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE screenshot_attempts
+		SET status='succeeded', image_path=$2, image_content_type=$3, image_size_bytes=$4,
+		    capture_finished_at=COALESCE(capture_finished_at, now()), telegram_sent_at=now(),
+		    error=NULL, updated_at=now()
+		WHERE id=$1`, id, imagePath, contentType, size)
+	return err
+}
+
+func (s *Store) MarkScreenshotFailed(ctx context.Context, id, imagePath, contentType string, size int64, message string) error {
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE screenshot_attempts
+		SET status='failed',
+		    image_path=COALESCE(NULLIF($2, ''), image_path),
+		    image_content_type=COALESCE(NULLIF($3, ''), image_content_type),
+		    image_size_bytes=CASE WHEN $4 > 0 THEN $4 ELSE image_size_bytes END,
+		    capture_finished_at=COALESCE(capture_finished_at, now()),
+		    error=$5, updated_at=now()
+		WHERE id=$1`, id, imagePath, contentType, size, message)
+	return err
+}
+
+func (s *Store) MarkScreenshotUnsupported(ctx context.Context, id, message string) error {
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE screenshot_attempts
+		SET status='unsupported', capture_finished_at=now(), error=$2, updated_at=now()
+		WHERE id=$1`, id, message)
+	return err
+}
+
+func (s *Store) ScreenshotAttempt(ctx context.Context, id string) (models.ScreenshotAttemptRecord, error) {
+	row := s.Pool.QueryRow(ctx, `
+		SELECT id::text, endpoint_id::text, endpoint_check_id::text, notification_event_id::text,
+		       status, error, image_path, image_content_type, image_size_bytes,
+		       capture_started_at, capture_finished_at, telegram_sent_at, created_at, updated_at
+		FROM screenshot_attempts
+		WHERE id=$1`, id)
+	return scanScreenshotAttempt(row)
+}
+
+func (s *Store) RetryScreenshotAttempt(ctx context.Context, id string) (models.ScreenshotAttempt, error) {
+	current, err := s.ScreenshotAttempt(ctx, id)
+	if err != nil {
+		return models.ScreenshotAttempt{}, err
+	}
+	if current.Status != "failed" {
+		return models.ScreenshotAttempt{}, ErrInvalidState
+	}
+	row := s.Pool.QueryRow(ctx, `
+		UPDATE screenshot_attempts
+		SET status='pending', error=NULL, image_path=NULL, image_content_type=NULL,
+		    image_size_bytes=NULL, capture_started_at=NULL, capture_finished_at=NULL,
+		    telegram_sent_at=NULL, updated_at=now()
+		WHERE id=$1
+		RETURNING id::text, endpoint_id::text, endpoint_check_id::text, notification_event_id::text,
+		          status, error, image_path, image_content_type, image_size_bytes,
+		          capture_started_at, capture_finished_at, telegram_sent_at, created_at, updated_at`, id)
+	updated, err := scanScreenshotAttempt(row)
+	if err != nil {
+		return models.ScreenshotAttempt{}, err
+	}
+	return updated.ScreenshotAttempt, nil
+}
+
+func (s *Store) ScreenshotImage(ctx context.Context, id string) (string, string, error) {
+	var imagePath sql.NullString
+	var contentType sql.NullString
+	err := s.Pool.QueryRow(ctx, `
+		SELECT image_path, image_content_type
+		FROM screenshot_attempts
+		WHERE id=$1
+		  AND image_path IS NOT NULL
+		  AND image_path <> ''`, id).Scan(&imagePath, &contentType)
+	if err != nil {
+		return "", "", err
+	}
+	mime := stringFromNull(contentType)
+	if mime == "" {
+		mime = "image/png"
+	}
+	return imagePath.String, mime, nil
 }
 
 func (s *Store) GetNotificationSettings(ctx context.Context) (models.NotificationSettings, error) {
@@ -870,7 +1046,7 @@ func marshalJSON(headers []models.Header, condition models.Condition) ([]byte, [
 const endpointColumns = `
 	id::text, name, url, http_method, headers, request_body_enabled, request_body, proxy_enabled, proxy_address,
 	proxy_username, proxy_password_encrypted, ping_interval_seconds, notify_condition,
-	deactivate_after_seconds, notify_once, notification_template, active, state, created_at, updated_at,
+	deactivate_after_seconds, notify_once, notification_template, screenshot_on_match, active, state, created_at, updated_at,
 	last_checked_at, next_run_at, deactivate_at, last_status_code, last_response_length,
 	last_error, last_duration_ms, baseline_status_code, baseline_response_length,
 	notified_at, deactivated_reason, locked_until, version`
@@ -917,8 +1093,8 @@ func scanEndpoint(row scanner) (models.Endpoint, error) {
 		&endpoint.RequestBodyEnabled, &endpoint.RequestBody,
 		&endpoint.Proxy.Enabled, &proxyAddress, &proxyUsername, &proxyPassword,
 		&endpoint.PingIntervalSeconds, &conditionJSON, &deactivateAfter,
-		&endpoint.NotifyOnce, &endpoint.NotificationTemplate, &endpoint.Active,
-		&endpoint.State, &endpoint.CreatedAt, &endpoint.UpdatedAt, &lastChecked,
+		&endpoint.NotifyOnce, &endpoint.NotificationTemplate, &endpoint.ScreenshotOnMatch,
+		&endpoint.Active, &endpoint.State, &endpoint.CreatedAt, &endpoint.UpdatedAt, &lastChecked,
 		&nextRun, &deactivateAt, &lastStatus, &lastLength, &lastErr,
 		&lastDuration, &baselineStatus, &baselineLength, &notifiedAt,
 		&reason, &lockedUntil, &endpoint.Version,
@@ -961,6 +1137,36 @@ func scanEndpoint(row scanner) (models.Endpoint, error) {
 	endpoint.NotifyConditionRaw = conditionJSON
 	endpoint.HeaderViews = HeaderViews(endpoint.Headers)
 	return endpoint, nil
+}
+
+func scanScreenshotAttempt(row scanner) (models.ScreenshotAttemptRecord, error) {
+	var attempt models.ScreenshotAttemptRecord
+	var eventID sql.NullString
+	var attemptErr sql.NullString
+	var imagePath sql.NullString
+	var contentType sql.NullString
+	var imageSize sql.NullInt64
+	var captureStarted sql.NullTime
+	var captureFinished sql.NullTime
+	var telegramSent sql.NullTime
+	err := row.Scan(
+		&attempt.ID, &attempt.EndpointID, &attempt.EndpointCheckID, &eventID,
+		&attempt.Status, &attemptErr, &imagePath, &contentType, &imageSize,
+		&captureStarted, &captureFinished, &telegramSent, &attempt.CreatedAt, &attempt.UpdatedAt,
+	)
+	if err != nil {
+		return attempt, err
+	}
+	attempt.NotificationEventID = stringPtrFromNull(eventID)
+	attempt.Error = stringPtrFromNull(attemptErr)
+	attempt.ImagePath = stringPtrFromNull(imagePath)
+	attempt.ImageAvailable = imagePath.Valid && imagePath.String != ""
+	attempt.ImageContentType = stringPtrFromNull(contentType)
+	attempt.ImageSizeBytes = int64PtrFromNull(imageSize)
+	attempt.CaptureStartedAt = timePtrFromNull(captureStarted)
+	attempt.CaptureFinishedAt = timePtrFromNull(captureFinished)
+	attempt.TelegramSentAt = timePtrFromNull(telegramSent)
+	return attempt, nil
 }
 
 func HeaderViews(headers []models.Header) []models.HeaderView {

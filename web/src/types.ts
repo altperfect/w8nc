@@ -41,6 +41,7 @@ export interface Endpoint {
   notify_condition: NotifyCondition
   notify_once: boolean
   notification_template: string
+  screenshot_on_match: boolean
   active: boolean
   state: string
   created_at: string
@@ -69,6 +70,7 @@ export interface EndpointInput {
   deactivate_after?: string | null
   notify_condition: NotifyCondition
   notification_template: string
+  screenshot_on_match: boolean
   active: boolean
 }
 
@@ -106,7 +108,25 @@ export interface EndpointCheck {
   truncated: boolean
   condition_matched: boolean
   notification_event_id?: string
+  screenshot_attempts?: ScreenshotAttempt[]
   created_at: string
+}
+
+export interface ScreenshotAttempt {
+  id: string
+  endpoint_id: string
+  endpoint_check_id: string
+  notification_event_id?: string
+  status: 'pending' | 'capturing' | 'succeeded' | 'failed' | 'unsupported'
+  error?: string
+  image_available: boolean
+  image_content_type?: string
+  image_size_bytes?: number
+  capture_started_at?: string
+  capture_finished_at?: string
+  telegram_sent_at?: string
+  created_at: string
+  updated_at: string
 }
 
 export interface MeResponse {

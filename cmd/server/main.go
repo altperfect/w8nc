@@ -23,6 +23,7 @@ import (
 	"w8nc/internal/notifier"
 	"w8nc/internal/pinger"
 	"w8nc/internal/scheduler"
+	"w8nc/internal/screenshots"
 	"w8nc/internal/static"
 )
 
@@ -156,6 +157,22 @@ func main() {
 		Logger: logger,
 	}
 	sched.Start(ctx)
+	if cfg.ScreenshotsEnabled {
+		screenshotCapturer := &screenshots.ChromiumCapturer{
+			ChromePath:          cfg.ScreenshotChromePath,
+			StoragePath:         cfg.ScreenshotStoragePath,
+			Timeout:             cfg.ScreenshotTimeout,
+			ViewportWidth:       cfg.ScreenshotViewportWidth,
+			ViewportHeight:      cfg.ScreenshotViewportHeight,
+			AllowPrivateTargets: cfg.AllowPrivateTargets,
+			Secrets:             secrets,
+		}
+		screenshotService := &screenshots.Service{
+			Store: store, Capturer: screenshotCapturer, Notifier: notify, Tick: 5 * time.Second,
+			Concurrency: cfg.ScreenshotMaxConcurrency, Logger: logger,
+		}
+		screenshotService.Start(ctx)
+	}
 
 	server := &http.Server{
 		Addr: cfg.AppAddr,

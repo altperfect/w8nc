@@ -614,6 +614,37 @@ th {
   min-height: 40px;
 }
 
+.screenshot-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 0.45rem;
+  min-height: 0;
+}
+
+.screenshot-option > input[type='checkbox'] {
+  width: auto;
+  margin-top: 0.4rem;
+}
+
+.screenshot-option-copy {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.screenshot-option-title {
+  display: flex;
+  align-items: center;
+  gap: 0.32rem;
+  color: #d7dbe0;
+}
+
+.checkbox-hint {
+  color: #68717c;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .duration-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(8.2rem, auto);
@@ -707,6 +738,20 @@ th {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
+}
+
+.screenshot-help::before {
+  left: 0;
+  right: auto;
+  bottom: auto;
+  top: 100%;
+}
+
+.screenshot-help .template-tooltip {
+  left: 0;
+  right: auto;
+  top: calc(100% + 0.32rem);
+  bottom: auto;
 }
 
 .template-tooltip strong {
@@ -868,6 +913,25 @@ th {
   width: min(460px, 100%);
 }
 
+.screenshot-modal {
+  width: min(980px, 100%);
+}
+
+.screenshot-preview {
+  max-height: 76vh;
+  overflow: auto;
+  margin-top: 0.74rem;
+  border: 1px solid #1a1e24;
+  border-radius: 6px;
+  background: #08090b;
+}
+
+.screenshot-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .modal-body {
   display: grid;
   gap: 0.74rem;
@@ -954,6 +1018,39 @@ th {
   display: grid;
   place-items: center;
   background: rgb(12 14 16 / 0.7);
+}
+
+.screenshot-attempt-row td {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.screenshot-attempt {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.1rem;
+  padding: 0.38rem 0.52rem;
+  border: 1px solid #1a1e24;
+  border-radius: 6px;
+  background: #0b0d10;
+  color: #9aa2ab;
+  font-size: 0.76rem;
+}
+
+.screenshot-attempt-label {
+  color: #d7dbe0;
+}
+
+.screenshot-attempt button {
+  min-height: 1.58rem;
+  margin-left: auto;
+  padding: 0.2rem 0.48rem;
+  font-size: 0.72rem;
+}
+
+.screenshot-attempt button + button {
+  margin-left: 0;
 }
 
 @media (max-width: 760px) {

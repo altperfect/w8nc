@@ -13,6 +13,7 @@ import (
 
 	secretbox "w8nc/internal/crypto"
 	"w8nc/internal/models"
+	"w8nc/internal/socks5"
 	"w8nc/internal/validation"
 )
 
@@ -154,11 +155,11 @@ func (p *Pinger) clientFor(endpoint models.Endpoint) (*http.Client, error) {
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
-	dialer := socks5Dialer{
-		proxyAddress: endpoint.Proxy.Address,
-		username:     endpoint.Proxy.Username,
-		password:     password,
-		timeout:      p.Timeout,
+	dialer := socks5.Dialer{
+		ProxyAddress: endpoint.Proxy.Address,
+		Username:     endpoint.Proxy.Username,
+		Password:     password,
+		Timeout:      p.Timeout,
 	}
 	transport.DialContext = dialer.DialContext
 	return &http.Client{

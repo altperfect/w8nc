@@ -67,6 +67,7 @@ type Endpoint struct {
 	NotifyConditionRaw     json.RawMessage `json:"-"`
 	NotifyOnce             bool            `json:"notify_once"`
 	NotificationTemplate   string          `json:"notification_template"`
+	ScreenshotOnMatch      bool            `json:"screenshot_on_match"`
 	Active                 bool            `json:"active"`
 	State                  string          `json:"state"`
 	CreatedAt              time.Time       `json:"created_at"`
@@ -98,22 +99,46 @@ type EndpointInput struct {
 	DeactivateAfter      string        `json:"deactivate_after,omitempty"`
 	NotifyCondition      Condition     `json:"notify_condition"`
 	NotificationTemplate string        `json:"notification_template"`
+	ScreenshotOnMatch    bool          `json:"screenshot_on_match"`
 	Active               bool          `json:"active"`
 }
 
 type EndpointCheck struct {
-	ID                  string    `json:"id"`
-	EndpointID          string    `json:"endpoint_id"`
-	StartedAt           time.Time `json:"started_at"`
-	FinishedAt          time.Time `json:"finished_at"`
-	StatusCode          *int      `json:"status_code,omitempty"`
-	ResponseLength      *int64    `json:"response_length,omitempty"`
-	DurationMS          int       `json:"duration_ms"`
-	Error               *string   `json:"error,omitempty"`
-	Truncated           bool      `json:"truncated"`
-	ConditionMatched    bool      `json:"condition_matched"`
-	NotificationEventID *string   `json:"notification_event_id,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
+	ID                  string              `json:"id"`
+	EndpointID          string              `json:"endpoint_id"`
+	StartedAt           time.Time           `json:"started_at"`
+	FinishedAt          time.Time           `json:"finished_at"`
+	StatusCode          *int                `json:"status_code,omitempty"`
+	ResponseLength      *int64              `json:"response_length,omitempty"`
+	DurationMS          int                 `json:"duration_ms"`
+	Error               *string             `json:"error,omitempty"`
+	Truncated           bool                `json:"truncated"`
+	ConditionMatched    bool                `json:"condition_matched"`
+	NotificationEventID *string             `json:"notification_event_id,omitempty"`
+	ScreenshotAttempts  []ScreenshotAttempt `json:"screenshot_attempts,omitempty"`
+	CreatedAt           time.Time           `json:"created_at"`
+}
+
+type ScreenshotAttempt struct {
+	ID                  string     `json:"id"`
+	EndpointID          string     `json:"endpoint_id"`
+	EndpointCheckID     string     `json:"endpoint_check_id"`
+	NotificationEventID *string    `json:"notification_event_id,omitempty"`
+	Status              string     `json:"status"`
+	Error               *string    `json:"error,omitempty"`
+	ImageAvailable      bool       `json:"image_available"`
+	ImageContentType    *string    `json:"image_content_type,omitempty"`
+	ImageSizeBytes      *int64     `json:"image_size_bytes,omitempty"`
+	CaptureStartedAt    *time.Time `json:"capture_started_at,omitempty"`
+	CaptureFinishedAt   *time.Time `json:"capture_finished_at,omitempty"`
+	TelegramSentAt      *time.Time `json:"telegram_sent_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+}
+
+type ScreenshotAttemptRecord struct {
+	ScreenshotAttempt
+	ImagePath *string
 }
 
 type PingResult struct {
