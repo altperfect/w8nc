@@ -1,0 +1,11 @@
+ALTER TABLE endpoints
+    ADD COLUMN IF NOT EXISTS proxy_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS proxy_address TEXT NULL,
+    ADD COLUMN IF NOT EXISTS proxy_username TEXT NULL,
+    ADD COLUMN IF NOT EXISTS proxy_password_encrypted TEXT NULL;
+
+ALTER TABLE notification_settings
+    ADD COLUMN IF NOT EXISTS proxy_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS proxy_address TEXT NULL,
+    ADD COLUMN IF NOT EXISTS proxy_username TEXT NULL,
+    ADD COLUMN IF NOT EXISTS proxy_password_encrypted TEXT NULL;

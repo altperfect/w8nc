@@ -1,0 +1,10 @@
+.git
+.agents
+.codex
+node_modules
+web/node_modules
+web/dist
+/tmp
+*.log
+server
+server.exe

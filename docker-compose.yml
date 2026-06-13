@@ -1,0 +1,50 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        NOTIFY_VERSION: "v1.0.7"
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      APP_ADDR: "0.0.0.0:8080"
+      DATABASE_URL: "postgres://pinger:pinger@postgres:5432/pinger?sslmode=disable"
+      AUTH_ENABLED: "true"
+      COOKIE_SECURE: "false"
+      SESSION_SECRET: "${SESSION_SECRET:?set SESSION_SECRET or run make init-secrets}"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY:?set ENCRYPTION_KEY or run make init-secrets}"
+      NOTIFY_BIN_PATH: "/usr/local/bin/notify"
+      NOTIFY_PROVIDER_CONFIG_PATH: "/app/data/notify-provider.yaml"
+      DEFAULT_REQUEST_TIMEOUT: "10s"
+      DEFAULT_MAX_RESPONSE_BYTES: "5242880"
+      SCHEDULER_TICK_INTERVAL: "1s"
+      PING_WORKER_CONCURRENCY: "10"
+      MIN_PING_INTERVAL: "5s"
+      MAX_PING_INTERVAL: "30d"
+      ALLOW_PRIVATE_TARGETS: "false"
+      LOG_LEVEL: "info"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - app_data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: pinger
+      POSTGRES_PASSWORD: pinger
+      POSTGRES_DB: pinger
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pinger -d pinger"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+volumes:
+  pg_data:
+  app_data:
