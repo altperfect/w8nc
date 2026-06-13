@@ -1,10 +1,9 @@
 .git
 .agents
-.codex
+.code*
 node_modules
 web/node_modules
 web/dist
 /tmp
 *.log
 server
-server.exe
