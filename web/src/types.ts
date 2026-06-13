@@ -25,6 +25,14 @@ export interface NotifyCondition {
   tolerance_bytes?: number
 }
 
+export interface Tag {
+  id?: string
+  name: string
+  color: string
+  created_at?: string
+  updated_at?: string
+}
+
 export interface Endpoint {
   id: string
   name?: string
@@ -42,6 +50,7 @@ export interface Endpoint {
   notify_once: boolean
   notification_template: string
   screenshot_on_match: boolean
+  tags: Tag[]
   active: boolean
   state: string
   created_at: string
@@ -71,6 +80,7 @@ export interface EndpointInput {
   notify_condition: NotifyCondition
   notification_template: string
   screenshot_on_match: boolean
+  tags: Tag[]
   active: boolean
 }
 
@@ -87,6 +97,11 @@ export interface EndpointTestResult {
 
 export interface TemplatePlaceholdersResponse {
   items: string[]
+}
+
+export interface TagsResponse {
+  items: Tag[]
+  colors: string[]
 }
 
 export interface ListResponse<T> {

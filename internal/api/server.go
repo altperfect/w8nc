@@ -119,6 +119,14 @@ func (s *Server) serveProtectedAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleTemplatePlaceholders(w, r)
 		return
 	}
+	if r.URL.Path == "/api/tags" {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		s.handleListTags(w, r)
+		return
+	}
 	if r.URL.Path == "/api/auth/password" {
 		if r.Method != http.MethodPut {
 			methodNotAllowed(w)
@@ -188,10 +196,31 @@ func (s *Server) handleTemplatePlaceholders(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
+	tags, err := s.Store.ListTags(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list tags")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":  tags,
+		"colors": models.AllowedTagColors,
+	})
+}
+
 func (s *Server) handleListEndpoints(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	page, _ := strconv.Atoi(query.Get("page"))
 	pageSize, _ := strconv.Atoi(query.Get("page_size"))
+	tag := strings.TrimSpace(query.Get("tag"))
+	if tag != "" {
+		normalized, err := models.NormalizeTagName(tag)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		tag = normalized
+	}
 	var active *bool
 	if value := query.Get("active"); value != "" {
 		parsed, err := strconv.ParseBool(value)
@@ -201,7 +230,7 @@ func (s *Server) handleListEndpoints(w http.ResponseWriter, r *http.Request) {
 	}
 	items, total, err := s.Store.ListEndpoints(r.Context(), db.ListEndpointsParams{
 		Page: page, PageSize: pageSize, Sort: query.Get("sort"),
-		State: query.Get("state"), Active: active, Method: query.Get("method"), Search: query.Get("search"),
+		State: query.Get("state"), Active: active, Method: query.Get("method"), Search: query.Get("search"), Tag: tag,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not list endpoints")
@@ -553,6 +582,10 @@ func (s *Server) endpointRecord(ctx context.Context, input models.EndpointInput,
 	if err != nil {
 		return db.EndpointRecord{}, false, err
 	}
+	tags, err := models.NormalizeTagInputs(input.Tags)
+	if err != nil {
+		return db.EndpointRecord{}, false, err
+	}
 	name := input.Name
 	if name != nil {
 		trimmed := strings.TrimSpace(*name)
@@ -568,7 +601,7 @@ func (s *Server) endpointRecord(ctx context.Context, input models.EndpointInput,
 		RequestBodyEnabled: input.RequestBodyEnabled, RequestBody: requestBody, Proxy: proxy,
 		PingIntervalSeconds: intervalSeconds, DeactivateAfterSeconds: deactivateAfterSeconds,
 		NotifyCondition: input.NotifyCondition, NotificationTemplate: template,
-		ScreenshotOnMatch: input.ScreenshotOnMatch, Active: input.Active,
+		ScreenshotOnMatch: input.ScreenshotOnMatch, Tags: tags, Active: input.Active,
 	}, intervalChanged, nil
 }
 

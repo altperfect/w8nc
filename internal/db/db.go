@@ -249,6 +249,7 @@ type ListEndpointsParams struct {
 	Active   *bool
 	Method   string
 	Search   string
+	Tag      string
 }
 
 func (p *ListEndpointsParams) Normalize() {
@@ -265,6 +266,7 @@ func (p *ListEndpointsParams) Normalize() {
 	p.Method = strings.ToUpper(strings.TrimSpace(p.Method))
 	p.State = strings.TrimSpace(p.State)
 	p.Search = strings.TrimSpace(p.Search)
+	p.Tag = strings.ToLower(strings.TrimSpace(p.Tag))
 }
 
 var sortExpressions = map[string]string{
@@ -321,6 +323,15 @@ func endpointWhere(params ListEndpointsParams) (string, []any) {
 		args = append(args, "%"+params.Search+"%")
 		clauses = append(clauses, fmt.Sprintf("(url ILIKE $%d OR name ILIKE $%d)", len(args), len(args)))
 	}
+	if params.Tag != "" {
+		args = append(args, params.Tag)
+		clauses = append(clauses, fmt.Sprintf(`EXISTS (
+			SELECT 1
+			FROM endpoint_tags et
+			JOIN tags t ON t.id=et.tag_id
+			WHERE et.endpoint_id=endpoints.id AND t.name=$%d
+		)`, len(args)))
+	}
 	if len(clauses) == 0 {
 		return "", args
 	}
@@ -340,11 +351,16 @@ type EndpointRecord struct {
 	NotifyCondition        models.Condition
 	NotificationTemplate   string
 	ScreenshotOnMatch      bool
+	Tags                   []models.TagInput
 	Active                 bool
 }
 
 func (s *Store) CreateEndpoint(ctx context.Context, record EndpointRecord) (models.Endpoint, error) {
 	headersJSON, conditionJSON, err := marshalJSON(record.Headers, record.NotifyCondition)
+	if err != nil {
+		return models.Endpoint{}, err
+	}
+	tags, err := models.NormalizeTagInputs(record.Tags)
 	if err != nil {
 		return models.Endpoint{}, err
 	}
@@ -359,16 +375,31 @@ func (s *Store) CreateEndpoint(ctx context.Context, record EndpointRecord) (mode
 	if !record.Active {
 		state = "deactivated"
 	}
-	row := s.Pool.QueryRow(ctx, `
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return models.Endpoint{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var id string
+	if err := tx.QueryRow(ctx, `
 		INSERT INTO endpoints (name, url, http_method, headers, request_body_enabled, request_body, proxy_enabled, proxy_address, proxy_username, proxy_password_encrypted, ping_interval_seconds, deactivate_after_seconds, notify_condition, notification_template, screenshot_on_match, active, state, next_run_at, deactivate_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-		RETURNING `+endpointColumns,
+		RETURNING id::text`,
 		record.Name, record.URL, record.HTTPMethod, headersJSON, record.RequestBodyEnabled, record.RequestBody,
 		record.Proxy.Enabled, nullString(record.Proxy.Address), nullString(record.Proxy.Username),
 		record.Proxy.PasswordEncrypted, record.PingIntervalSeconds,
 		record.DeactivateAfterSeconds, conditionJSON, record.NotificationTemplate, record.ScreenshotOnMatch,
-		record.Active, state, nextRun, deactivateAt)
-	return scanEndpoint(row)
+		record.Active, state, nextRun, deactivateAt).Scan(&id); err != nil {
+		return models.Endpoint{}, err
+	}
+	if err := syncEndpointTags(ctx, tx, id, tags); err != nil {
+		return models.Endpoint{}, err
+	}
+	endpoint, err := scanEndpoint(tx.QueryRow(ctx, `SELECT `+endpointColumns+` FROM endpoints WHERE id=$1`, id))
+	if err != nil {
+		return models.Endpoint{}, err
+	}
+	return endpoint, tx.Commit(ctx)
 }
 
 func (s *Store) GetEndpoint(ctx context.Context, id string) (models.Endpoint, error) {
@@ -384,6 +415,10 @@ func (s *Store) UpdateEndpoint(ctx context.Context, id string, record EndpointRe
 		return models.Endpoint{}, err
 	}
 	headersJSON, conditionJSON, err := marshalJSON(record.Headers, record.NotifyCondition)
+	if err != nil {
+		return models.Endpoint{}, err
+	}
+	tags, err := models.NormalizeTagInputs(record.Tags)
 	if err != nil {
 		return models.Endpoint{}, err
 	}
@@ -411,7 +446,13 @@ func (s *Store) UpdateEndpoint(ctx context.Context, id string, record EndpointRe
 		manual := "manual"
 		reason = &manual
 	}
-	row := s.Pool.QueryRow(ctx, `
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return models.Endpoint{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var updatedID string
+	if err := tx.QueryRow(ctx, `
 		UPDATE endpoints
 		SET name=$2, url=$3, http_method=$4, headers=$5, request_body_enabled=$6,
 		    request_body=$7, proxy_enabled=$8, proxy_address=$9, proxy_username=$10,
@@ -422,13 +463,22 @@ func (s *Store) UpdateEndpoint(ctx context.Context, id string, record EndpointRe
 		    deactivated_reason=$21, notified_at=$22,
 		    updated_at=now(), version=version+1, locked_until=NULL
 		WHERE id=$1
-		RETURNING `+endpointColumns,
+		RETURNING id::text`,
 		id, record.Name, record.URL, record.HTTPMethod, headersJSON, record.RequestBodyEnabled,
 		record.RequestBody, record.Proxy.Enabled, nullString(record.Proxy.Address),
 		nullString(record.Proxy.Username), record.Proxy.PasswordEncrypted, record.PingIntervalSeconds,
 		record.DeactivateAfterSeconds, conditionJSON, record.NotificationTemplate, record.ScreenshotOnMatch, record.Active,
-		state, nextRun, deactivateAt, reason, notifiedAt)
-	return scanEndpoint(row)
+		state, nextRun, deactivateAt, reason, notifiedAt).Scan(&updatedID); err != nil {
+		return models.Endpoint{}, err
+	}
+	if err := syncEndpointTags(ctx, tx, updatedID, tags); err != nil {
+		return models.Endpoint{}, err
+	}
+	endpoint, err := scanEndpoint(tx.QueryRow(ctx, `SELECT `+endpointColumns+` FROM endpoints WHERE id=$1`, updatedID))
+	if err != nil {
+		return models.Endpoint{}, err
+	}
+	return endpoint, tx.Commit(ctx)
 }
 
 func (s *Store) DeleteEndpoint(ctx context.Context, id string) error {
@@ -442,8 +492,53 @@ func (s *Store) DeleteEndpoint(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *Store) ListTags(ctx context.Context) ([]models.Tag, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id::text, name, color, created_at, updated_at
+		FROM tags
+		ORDER BY name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tags := make([]models.Tag, 0)
+	for rows.Next() {
+		var tag models.Tag
+		if err := rows.Scan(&tag.ID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt); err != nil {
+			return nil, err
+		}
+		tags = append(tags, tag)
+	}
+	return tags, rows.Err()
+}
+
+func syncEndpointTags(ctx context.Context, tx pgx.Tx, endpointID string, tags []models.TagInput) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM endpoint_tags WHERE endpoint_id=$1`, endpointID); err != nil {
+		return err
+	}
+	for _, tag := range tags {
+		var tagID string
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO tags (name, color)
+			VALUES ($1, $2)
+			ON CONFLICT (name) DO UPDATE
+			SET color=EXCLUDED.color, updated_at=now()
+			RETURNING id::text`, tag.Name, tag.Color).Scan(&tagID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO endpoint_tags (endpoint_id, tag_id)
+			VALUES ($1, $2)
+			ON CONFLICT DO NOTHING`, endpointID, tagID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Store) ActivateEndpoint(ctx context.Context, id string) (models.Endpoint, error) {
-	row := s.Pool.QueryRow(ctx, `
+	var updatedID string
+	err := s.Pool.QueryRow(ctx, `
 		UPDATE endpoints
 		SET active=TRUE, state='unknown', next_run_at=now(), notified_at=NULL,
 		    deactivate_at=CASE
@@ -452,18 +547,25 @@ func (s *Store) ActivateEndpoint(ctx context.Context, id string) (models.Endpoin
 		    END,
 		    deactivated_reason=NULL, locked_until=NULL, updated_at=now(), version=version+1
 		WHERE id=$1
-		RETURNING `+endpointColumns, id)
-	return scanEndpoint(row)
+		RETURNING id::text`, id).Scan(&updatedID)
+	if err != nil {
+		return models.Endpoint{}, err
+	}
+	return s.GetEndpoint(ctx, updatedID)
 }
 
 func (s *Store) DeactivateEndpoint(ctx context.Context, id string) (models.Endpoint, error) {
-	row := s.Pool.QueryRow(ctx, `
+	var updatedID string
+	err := s.Pool.QueryRow(ctx, `
 		UPDATE endpoints
 		SET active=FALSE, state='deactivated', next_run_at=NULL, deactivate_at=NULL,
 		    deactivated_reason='manual', locked_until=NULL, updated_at=now(), version=version+1
 		WHERE id=$1
-		RETURNING `+endpointColumns, id)
-	return scanEndpoint(row)
+		RETURNING id::text`, id).Scan(&updatedID)
+	if err != nil {
+		return models.Endpoint{}, err
+	}
+	return s.GetEndpoint(ctx, updatedID)
 }
 
 func (s *Store) LockDueEndpoints(ctx context.Context, limit int, lockFor time.Duration) ([]models.Endpoint, error) {
@@ -1049,7 +1151,19 @@ const endpointColumns = `
 	deactivate_after_seconds, notify_once, notification_template, screenshot_on_match, active, state, created_at, updated_at,
 	last_checked_at, next_run_at, deactivate_at, last_status_code, last_response_length,
 	last_error, last_duration_ms, baseline_status_code, baseline_response_length,
-	notified_at, deactivated_reason, locked_until, version`
+	notified_at, deactivated_reason, locked_until, version,
+	COALESCE((
+		SELECT jsonb_agg(jsonb_build_object(
+			'id', t.id::text,
+			'name', t.name,
+			'color', t.color,
+			'created_at', t.created_at,
+			'updated_at', t.updated_at
+		) ORDER BY t.name)
+		FROM endpoint_tags et
+		JOIN tags t ON t.id=et.tag_id
+		WHERE et.endpoint_id=endpoints.id
+	), '[]'::jsonb)`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -1088,6 +1202,7 @@ func scanEndpoint(row scanner) (models.Endpoint, error) {
 	var notifiedAt sql.NullTime
 	var reason sql.NullString
 	var lockedUntil sql.NullTime
+	var tagsJSON []byte
 	err := row.Scan(
 		&endpoint.ID, &name, &endpoint.URL, &endpoint.HTTPMethod, &headersJSON,
 		&endpoint.RequestBodyEnabled, &endpoint.RequestBody,
@@ -1097,7 +1212,7 @@ func scanEndpoint(row scanner) (models.Endpoint, error) {
 		&endpoint.Active, &endpoint.State, &endpoint.CreatedAt, &endpoint.UpdatedAt, &lastChecked,
 		&nextRun, &deactivateAt, &lastStatus, &lastLength, &lastErr,
 		&lastDuration, &baselineStatus, &baselineLength, &notifiedAt,
-		&reason, &lockedUntil, &endpoint.Version,
+		&reason, &lockedUntil, &endpoint.Version, &tagsJSON,
 	)
 	if err != nil {
 		return endpoint, err
@@ -1132,6 +1247,9 @@ func scanEndpoint(row scanner) (models.Endpoint, error) {
 		return endpoint, err
 	}
 	if err := json.Unmarshal(conditionJSON, &endpoint.NotifyCondition); err != nil {
+		return endpoint, err
+	}
+	if err := json.Unmarshal(tagsJSON, &endpoint.Tags); err != nil {
 		return endpoint, err
 	}
 	endpoint.NotifyConditionRaw = conditionJSON

@@ -184,7 +184,11 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 		NotifyCondition:      condition("status_code_changed", nil),
 		NotificationTemplate: models.DefaultNotificationTemplate,
 		ScreenshotOnMatch:    true,
-		Active:               true,
+		Tags: []models.TagInput{
+			{Name: "Prod", Color: "teal"},
+			{Name: "auth", Color: "blue"},
+		},
+		Active: true,
 	}
 
 	created := doJSON[models.Endpoint](t, server, http.MethodPost, "/api/endpoints", createBody, http.StatusCreated)
@@ -204,6 +208,9 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	if !created.ScreenshotOnMatch {
 		t.Fatalf("screenshot flag was not persisted on create")
 	}
+	if len(created.Tags) != 2 || created.Tags[0].Name != "auth" || created.Tags[1].Name != "prod" {
+		t.Fatalf("tags were not normalized/persisted on create: %+v", created.Tags)
+	}
 
 	fetched := doJSON[models.Endpoint](t, server, http.MethodGet, "/api/endpoints/"+created.ID, nil, http.StatusOK)
 	if got := fetched.HeaderViews[0].Value; got != "********" {
@@ -215,10 +222,30 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	if !fetched.RequestBodyEnabled || fetched.RequestBody != createBody.RequestBody {
 		t.Fatalf("request body was not returned on get: enabled=%v body=%q", fetched.RequestBodyEnabled, fetched.RequestBody)
 	}
+	if len(fetched.Tags) != 2 || fetched.Tags[0].Color != "blue" || fetched.Tags[1].Color != "teal" {
+		t.Fatalf("tags were not returned on get: %+v", fetched.Tags)
+	}
+
+	filtered := doJSON[struct {
+		Items []models.Endpoint `json:"items"`
+		Total int               `json:"total"`
+	}](t, server, http.MethodGet, "/api/endpoints?tag=prod", nil, http.StatusOK)
+	if filtered.Total != 1 || len(filtered.Items) != 1 || filtered.Items[0].ID != created.ID {
+		t.Fatalf("tag filter did not return created endpoint: total=%d items=%+v", filtered.Total, filtered.Items)
+	}
+
+	tagCatalog := doJSON[struct {
+		Items  []models.Tag `json:"items"`
+		Colors []string     `json:"colors"`
+	}](t, server, http.MethodGet, "/api/tags", nil, http.StatusOK)
+	if len(tagCatalog.Items) != 2 || len(tagCatalog.Colors) == 0 {
+		t.Fatalf("tag catalog was not returned: %+v", tagCatalog)
+	}
 
 	createBody.PingInterval = "1m"
 	createBody.Headers[0].Value = "********"
 	createBody.Proxy.Password = "********"
+	createBody.Tags = []models.TagInput{{Name: "staging", Color: "amber"}}
 	updated := doJSON[models.Endpoint](t, server, http.MethodPut, "/api/endpoints/"+created.ID, createBody, http.StatusOK)
 	if updated.PingIntervalSeconds != 60 {
 		t.Fatalf("update did not change interval: %d", updated.PingIntervalSeconds)
@@ -228,6 +255,15 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	}
 	if !updated.RequestBodyEnabled || updated.RequestBody != createBody.RequestBody {
 		t.Fatalf("request body was not preserved on update: enabled=%v body=%q", updated.RequestBodyEnabled, updated.RequestBody)
+	}
+	if len(updated.Tags) != 1 || updated.Tags[0].Name != "staging" || updated.Tags[0].Color != "amber" {
+		t.Fatalf("tags were not replaced on update: %+v", updated.Tags)
+	}
+
+	createBody.Tags = []models.TagInput{{Name: "this-tag-name-is-too-long", Color: "teal"}}
+	invalidTag := postJSON(t, server, "/api/endpoints", createBody, http.StatusBadRequest)
+	if !strings.Contains(invalidTag.Body.String(), "tag name") {
+		t.Fatalf("unexpected invalid tag error: %s", invalidTag.Body.String())
 	}
 
 	recorder := httptest.NewRecorder()

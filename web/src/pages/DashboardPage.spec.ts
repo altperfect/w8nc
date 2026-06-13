@@ -4,6 +4,7 @@ import DashboardPage from './DashboardPage.vue'
 
 const mocks = vi.hoisted(() => ({
   listEndpoints: vi.fn(),
+  listTags: vi.fn(),
   deleteEndpoint: vi.fn(),
   activateEndpoint: vi.fn(),
   deactivateEndpoint: vi.fn(),
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../api/client', () => ({
   api: {
     listEndpoints: mocks.listEndpoints,
+    listTags: mocks.listTags,
     deleteEndpoint: mocks.deleteEndpoint,
     activateEndpoint: mocks.activateEndpoint,
     deactivateEndpoint: mocks.deactivateEndpoint,
@@ -28,6 +30,7 @@ vi.mock('../api/client', () => ({
 describe('DashboardPage', () => {
   beforeEach(() => {
     mocks.listEndpoints.mockReset()
+    mocks.listTags.mockReset()
     mocks.deleteEndpoint.mockReset()
     mocks.activateEndpoint.mockReset()
     mocks.deactivateEndpoint.mockReset()
@@ -50,6 +53,7 @@ describe('DashboardPage', () => {
           notify_once: true,
           notification_template: '',
           screenshot_on_match: false,
+          tags: [{ id: 'tag-1', name: 'prod', color: 'teal' }],
           active: true,
           state: 'unknown',
           created_at: '2026-06-12T00:00:00Z',
@@ -61,6 +65,10 @@ describe('DashboardPage', () => {
       page_size: 20,
       total: 1
     })
+    mocks.listTags.mockResolvedValue({
+      items: [{ id: 'tag-1', name: 'prod', color: 'teal' }],
+      colors: ['slate', 'blue', 'teal', 'green', 'amber', 'rose', 'violet', 'gray']
+    })
     mocks.listChecks.mockResolvedValue({ items: [], page: 1, page_size: 20, total: 0 })
   })
 
@@ -71,6 +79,19 @@ describe('DashboardPage', () => {
     expect(wrapper.text()).toContain('https://example.com/admin')
     expect(wrapper.find('.url-origin').text()).toBe('https://example.com')
     expect(wrapper.find('.url-path').text()).toBe('/admin')
+    expect(wrapper.find('.tag-chip').text()).toContain('prod')
+  })
+
+  it('filters endpoints by tag', async () => {
+    const wrapper = mount(DashboardPage)
+    await flushPromises()
+
+    await wrapper.findAll('select').find((select) => select.text().includes('Any tag'))?.setValue('prod')
+    await flushPromises()
+
+    const calls = mocks.listEndpoints.mock.calls
+    const params = calls[calls.length - 1][0] as URLSearchParams
+    expect(params.get('tag')).toBe('prod')
   })
 
   it('renders not checked without a state dot', async () => {

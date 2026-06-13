@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Info, Send, X } from '@lucide/vue'
 import { api } from '../api/client'
 import HeaderEditor from './HeaderEditor.vue'
-import type { ConditionType, Endpoint, EndpointInput, EndpointTestResult, HeaderValue, ProxyConfig } from '../types'
+import type { ConditionType, Endpoint, EndpointInput, EndpointTestResult, HeaderValue, ProxyConfig, Tag } from '../types'
 
 type DurationUnit = 's' | 'm' | 'h' | 'd'
 type DurationParts = {
@@ -13,6 +13,10 @@ type DurationParts = {
 type ProxyAddressParts = {
   host: string
   port: string
+}
+type TagDraft = {
+  name: string
+  color: string
 }
 
 const props = defineProps<{ endpoint?: Endpoint | null; error?: string }>()
@@ -47,6 +51,7 @@ const state = reactive<EndpointInput>({
   notify_condition: props.endpoint?.notify_condition || { type: 'status_code_changed' },
   notification_template: props.endpoint?.notification_template || defaultTemplate,
   screenshot_on_match: props.endpoint?.screenshot_on_match || false,
+  tags: props.endpoint?.tags ? props.endpoint.tags.map((tag) => ({ name: tag.name, color: tag.color })) : [],
   active: props.endpoint?.active ?? true
 })
 const pingInterval = reactive<DurationParts>(parseDuration(props.endpoint?.ping_interval || '15s', 15, 's'))
@@ -60,6 +65,10 @@ const lastProxy = ref<ProxyConfig | null>(null)
 const lastProxyLoaded = ref(false)
 const proxyReusePromptVisible = ref(false)
 const templatePlaceholders = ref<string[]>([])
+const availableTags = ref<Tag[]>([])
+const tagColors = ref<string[]>(['slate', 'blue', 'teal', 'green', 'amber', 'rose', 'violet', 'gray'])
+const tagDraft = reactive<TagDraft>({ name: '', color: 'slate' })
+const tagError = ref('')
 let proxyReuseTimer: number | undefined
 
 const conditionType = computed({
@@ -91,6 +100,11 @@ const lastProxyTarget = computed(() => {
 })
 const screenshotSupported = computed(() => state.http_method.toUpperCase() === 'GET')
 if (!screenshotSupported.value) state.screenshot_on_match = false
+const tagSuggestions = computed(() =>
+  availableTags.value
+    .filter((tag) => !state.tags.some((selected) => selected.name === tag.name))
+    .slice(0, 6)
+)
 
 watch(
   () => state.http_method,
@@ -117,6 +131,7 @@ onUnmounted(() => {
 
 onMounted(() => {
   void loadTemplatePlaceholders()
+  void loadTags()
 })
 
 async function loadTemplatePlaceholders() {
@@ -125,6 +140,16 @@ async function loadTemplatePlaceholders() {
     templatePlaceholders.value = Array.isArray(response.items) ? response.items : []
   } catch {
     templatePlaceholders.value = []
+  }
+}
+
+async function loadTags() {
+  try {
+    const response = await api.listTags()
+    availableTags.value = Array.isArray(response.items) ? response.items : []
+    if (Array.isArray(response.colors) && response.colors.length) tagColors.value = response.colors
+  } catch {
+    availableTags.value = []
   }
 }
 
@@ -176,6 +201,7 @@ function currentInput(): EndpointInput {
     proxy: proxyInput(),
     ping_interval: durationValue(pingInterval),
     deactivate_after: durationValue(deactivateAfter) || null,
+    tags: state.tags.map((tag) => ({ name: tag.name, color: tag.color })),
     headers: state.headers
       .filter((header) => header.name.trim() !== '')
       .map((header) => {
@@ -183,6 +209,59 @@ function currentInput(): EndpointInput {
         return { ...header, sensitive: masked, masked }
       })
   }
+}
+
+function sanitizeTagDraft(event: Event) {
+  const input = event.target as HTMLInputElement
+  const value = normalizeTagNameInput(input.value)
+  input.value = value
+  tagDraft.name = value
+  tagError.value = ''
+}
+
+function normalizeTagNameInput(value: string) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 16)
+}
+
+function addDraftTag() {
+  addTag({ name: tagDraft.name, color: tagDraft.color }, true)
+}
+
+function addTag(tag: { name: string; color: string }, clearDraft = false) {
+  const name = normalizeTagNameInput(tag.name)
+  if (!name) {
+    tagError.value = 'Tag name is required'
+    return
+  }
+  if (!/^[a-z0-9]/.test(name)) {
+    tagError.value = 'Tag must start with a letter or number'
+    return
+  }
+  if (state.tags.some((selected) => selected.name === name)) {
+    tagError.value = ''
+    if (clearDraft) tagDraft.name = ''
+    return
+  }
+  if (state.tags.length >= 8) {
+    tagError.value = 'Use at most 8 tags'
+    return
+  }
+  const color = tagColors.value.includes(tag.color) ? tag.color : 'slate'
+  state.tags.push({ name, color })
+  tagError.value = ''
+  if (clearDraft) tagDraft.name = ''
+}
+
+function removeTag(name: string) {
+  state.tags = state.tags.filter((tag) => tag.name !== name)
+}
+
+function tagColorLabel(color: string) {
+  return color.charAt(0).toUpperCase() + color.slice(1)
 }
 
 function proxyInput() {
@@ -312,6 +391,58 @@ async function testRequest() {
         URL
         <input v-model="state.url" required placeholder="https://example.com/admin" />
       </label>
+      <div class="tags-field wide">
+        <div class="field-heading">
+          <span>Tags</span>
+          <span>Short labels, up to 16 characters each.</span>
+        </div>
+        <div class="tag-editor-row">
+          <input
+            v-model="tagDraft.name"
+            maxlength="16"
+            placeholder="prod"
+            aria-label="Tag name"
+            @input="sanitizeTagDraft"
+            @keydown.enter.prevent="addDraftTag"
+          />
+          <div class="tag-color-picker" aria-label="Tag color">
+            <button
+              v-for="color in tagColors"
+              :key="color"
+              type="button"
+              class="tag-swatch"
+              :class="`tag-color-${color}`"
+              :title="tagColorLabel(color)"
+              :aria-label="tagColorLabel(color)"
+              :aria-pressed="tagDraft.color === color"
+              @click="tagDraft.color = color"
+            />
+          </div>
+          <button type="button" @click="addDraftTag">Add tag</button>
+        </div>
+        <div v-if="state.tags.length" class="tag-chip-list">
+          <span v-for="tag in state.tags" :key="tag.name" class="tag-chip" :class="`tag-color-${tag.color}`">
+            {{ tag.name }}
+            <button type="button" :aria-label="`Remove ${tag.name}`" @click="removeTag(tag.name)">
+              <X :size="12" />
+            </button>
+          </span>
+        </div>
+        <div v-if="tagSuggestions.length" class="tag-suggestions">
+          <span>Reuse</span>
+          <button
+            v-for="tag in tagSuggestions"
+            :key="tag.id || tag.name"
+            type="button"
+            class="tag-chip"
+            :class="`tag-color-${tag.color}`"
+            @click="addTag(tag)"
+          >
+            {{ tag.name }}
+          </button>
+        </div>
+        <p v-if="tagError" class="error compact-error">{{ tagError }}</p>
+      </div>
       <label class="inline checkbox-line wide">
         <input v-model="state.request_body_enabled" type="checkbox" />
         Request has body

@@ -8,6 +8,7 @@ import type {
   MeResponse,
   NotificationSettings,
   ProxyConfig,
+  TagsResponse,
   TemplatePlaceholdersResponse
 } from '../types'
 
@@ -71,6 +72,7 @@ export const api = {
   listEndpoints: (params: URLSearchParams) => request<ListResponse<Endpoint>>(`/api/endpoints?${params.toString()}`),
   getLastProxy: () => request<{ available: boolean; proxy?: ProxyConfig }>('/api/proxies/last'),
   getTemplatePlaceholders: () => request<TemplatePlaceholdersResponse>('/api/template-placeholders'),
+  listTags: () => request<TagsResponse>('/api/tags'),
   createEndpoint: (input: EndpointInput) =>
     request<Endpoint>('/api/endpoints', { method: 'POST', body: JSON.stringify(input) }),
   testEndpointRequest: (input: EndpointInput) =>

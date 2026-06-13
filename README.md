@@ -99,6 +99,12 @@ Endpoint intervals use `digits + unit`:
 
 Days are exactly 24 hours. 
 
+## Tags
+
+Endpoints can have up to eight short tags. Tag names are normalized to lowercase, limited to 16 characters, and can use letters, numbers, hyphens, or underscores. Tags use a fixed muted color palette so dashboard chips stay readable.
+
+Tags appear under the endpoint URL in the dashboard table. Use the dashboard tag filter to show endpoints with a specific tag.
+
 ## Notify Conditions
 
 V1 supports the following conditions for notifications:
@@ -167,6 +173,8 @@ To embed a freshly built frontend into the Go binary locally:
 rm -rf internal/static/dist
 cp -R web/dist internal/static/dist
 GOCACHE=/tmp/w8nc-gocache GOMODCACHE=/tmp/w8nc-gomodcache go build ./cmd/server
+```
+
 ## Troubleshooting Notifications
 
 - Check `/api/health`; `notify_binary` should be `ok`.

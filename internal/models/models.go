@@ -2,6 +2,8 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -49,6 +51,26 @@ type Condition struct {
 	ToleranceBytes *int64          `json:"tolerance_bytes,omitempty"`
 }
 
+const (
+	MaxTagNameLength = 16
+	MaxEndpointTags  = 8
+)
+
+var AllowedTagColors = []string{"slate", "blue", "teal", "green", "amber", "rose", "violet", "gray"}
+
+type Tag struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Color     string    `json:"color"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type TagInput struct {
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
 type Endpoint struct {
 	ID                     string          `json:"id"`
 	Name                   *string         `json:"name,omitempty"`
@@ -68,6 +90,7 @@ type Endpoint struct {
 	NotifyOnce             bool            `json:"notify_once"`
 	NotificationTemplate   string          `json:"notification_template"`
 	ScreenshotOnMatch      bool            `json:"screenshot_on_match"`
+	Tags                   []Tag           `json:"tags"`
 	Active                 bool            `json:"active"`
 	State                  string          `json:"state"`
 	CreatedAt              time.Time       `json:"created_at"`
@@ -100,7 +123,71 @@ type EndpointInput struct {
 	NotifyCondition      Condition     `json:"notify_condition"`
 	NotificationTemplate string        `json:"notification_template"`
 	ScreenshotOnMatch    bool          `json:"screenshot_on_match"`
+	Tags                 []TagInput    `json:"tags"`
 	Active               bool          `json:"active"`
+}
+
+func NormalizeTagInputs(inputs []TagInput) ([]TagInput, error) {
+	tags := make([]TagInput, 0, len(inputs))
+	seen := make(map[string]bool)
+	for _, input := range inputs {
+		name, err := NormalizeTagName(input.Name)
+		if err != nil {
+			return nil, err
+		}
+		if seen[name] {
+			continue
+		}
+		color := strings.ToLower(strings.TrimSpace(input.Color))
+		if color == "" {
+			color = "slate"
+		}
+		if !TagColorAllowed(color) {
+			return nil, fmt.Errorf("tag color must be one of: %s", strings.Join(AllowedTagColors, ", "))
+		}
+		tags = append(tags, TagInput{Name: name, Color: color})
+		seen[name] = true
+		if len(tags) > MaxEndpointTags {
+			return nil, fmt.Errorf("endpoint can have at most %d tags", MaxEndpointTags)
+		}
+	}
+	return tags, nil
+}
+
+func NormalizeTagName(value string) (string, error) {
+	name := strings.ToLower(strings.TrimSpace(value))
+	if name == "" {
+		return "", fmt.Errorf("tag name is required")
+	}
+	if len(name) > MaxTagNameLength {
+		return "", fmt.Errorf("tag name must be %d characters or fewer", MaxTagNameLength)
+	}
+	for index, char := range name {
+		if !isTagNameChar(char) {
+			return "", fmt.Errorf("tag name can use only letters, numbers, hyphen, or underscore")
+		}
+		if index == 0 && !isASCIIAlnum(char) {
+			return "", fmt.Errorf("tag name must start with a letter or number")
+		}
+	}
+	return name, nil
+}
+
+func TagColorAllowed(color string) bool {
+	for _, allowed := range AllowedTagColors {
+		if color == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func isTagNameChar(char rune) bool {
+	return isASCIIAlnum(char) || char == '-' || char == '_'
+}
+
+func isASCIIAlnum(char rune) bool {
+	return (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')
 }
 
 type EndpointCheck struct {

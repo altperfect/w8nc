@@ -3,9 +3,10 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Edit3, History, Plus, Power, RefreshCw, Search, Trash2, X } from '@lucide/vue'
 import { api } from '../api/client'
 import EndpointForm from '../components/EndpointForm.vue'
-import type { Endpoint, EndpointCheck, EndpointInput, ScreenshotAttempt } from '../types'
+import type { Endpoint, EndpointCheck, EndpointInput, ScreenshotAttempt, Tag } from '../types'
 
 const endpoints = ref<Endpoint[]>([])
+const tags = ref<Tag[]>([])
 const total = ref(0)
 const error = ref('')
 const formError = ref('')
@@ -27,6 +28,7 @@ const filters = reactive({
   state: '',
   active: '',
   method: '',
+  tag: '',
   search: ''
 })
 
@@ -46,6 +48,7 @@ function params() {
   if (filters.state) query.set('state', filters.state)
   if (filters.active) query.set('active', filters.active)
   if (filters.method) query.set('method', filters.method)
+  if (filters.tag) query.set('tag', filters.tag)
   if (filters.search) query.set('search', filters.search)
   return query
 }
@@ -62,6 +65,15 @@ async function load() {
   }
 }
 
+async function loadTags() {
+  try {
+    const response = await api.listTags()
+    tags.value = Array.isArray(response.items) ? response.items : []
+  } catch {
+    tags.value = []
+  }
+}
+
 async function saveEndpoint(input: EndpointInput) {
   busy.value = true
   formError.value = ''
@@ -69,6 +81,7 @@ async function saveEndpoint(input: EndpointInput) {
     if (modal.value === 'edit' && editing.value) await api.updateEndpoint(editing.value.id, input)
     else await api.createEndpoint(input)
     closeEndpointModal()
+    await loadTags()
     await load()
   } catch (err) {
     formError.value = err instanceof Error ? err.message : 'Could not save endpoint'
@@ -175,6 +188,14 @@ function urlPath(url: string) {
   return splitUrl(url).path
 }
 
+function visibleTags(endpoint: Endpoint) {
+  return (endpoint.tags || []).slice(0, 3)
+}
+
+function hiddenTagCount(endpoint: Endpoint) {
+  return Math.max(0, (endpoint.tags || []).length - visibleTags(endpoint).length)
+}
+
 function resultLabel(state: string) {
   if (state === 'live') return 'Live'
   if (state === 'warning') return 'HTTP error'
@@ -235,6 +256,7 @@ let timer: number | undefined
 let historyTimer: number | undefined
 onMounted(() => {
   void load()
+  void loadTags()
   timer = window.setInterval(load, 5000)
 })
 onUnmounted(() => {
@@ -304,6 +326,10 @@ onUnmounted(() => {
         <option>DELETE</option>
         <option>OPTIONS</option>
       </select>
+      <select v-model="filters.tag" @change="filters.page = 1; load()">
+        <option value="">Any tag</option>
+        <option v-for="tag in tags" :key="tag.id || tag.name" :value="tag.name">{{ tag.name }}</option>
+      </select>
       <select v-model="filters.sort" @change="load">
         <option value="created_desc">Newest created</option>
         <option value="created_asc">Oldest created</option>
@@ -324,7 +350,7 @@ onUnmounted(() => {
       <thead>
         <tr>
           <th class="last-result-cell">Last result</th>
-          <th>Name</th>
+          <th class="name-cell">Name</th>
           <th class="url-cell">URL</th>
           <th>Method</th>
           <th>Interval</th>
@@ -342,9 +368,17 @@ onUnmounted(() => {
             <span v-if="endpoint.state !== 'unknown'" class="state-dot" :class="endpoint.state" />
             {{ resultLabel(endpoint.state) }}
           </td>
-          <td data-label="Name">{{ endpoint.name || '' }}</td>
+          <td class="name-cell" data-label="Name" :title="endpoint.name || ''">
+            <span>{{ endpoint.name || '' }}</span>
+          </td>
           <td class="url-cell" data-label="URL" :title="endpoint.url">
             <span class="url-origin">{{ urlOrigin(endpoint.url) }}</span><span class="url-path">{{ urlPath(endpoint.url) }}</span>
+            <span v-if="endpoint.tags?.length" class="endpoint-tags">
+              <span v-for="tag in visibleTags(endpoint)" :key="tag.id || tag.name" class="tag-chip" :class="`tag-color-${tag.color}`">
+                {{ tag.name }}
+              </span>
+              <span v-if="hiddenTagCount(endpoint)" class="tag-chip tag-more">+{{ hiddenTagCount(endpoint) }}</span>
+            </span>
           </td>
           <td data-label="Method">{{ endpoint.http_method }}</td>
           <td data-label="Interval">{{ endpoint.ping_interval }}</td>

@@ -5,14 +5,16 @@ import EndpointForm from './EndpointForm.vue'
 const mocks = vi.hoisted(() => ({
   testEndpointRequest: vi.fn(),
   getLastProxy: vi.fn(),
-  getTemplatePlaceholders: vi.fn()
+  getTemplatePlaceholders: vi.fn(),
+  listTags: vi.fn()
 }))
 
 vi.mock('../api/client', () => ({
   api: {
     testEndpointRequest: mocks.testEndpointRequest,
     getLastProxy: mocks.getLastProxy,
-    getTemplatePlaceholders: mocks.getTemplatePlaceholders
+    getTemplatePlaceholders: mocks.getTemplatePlaceholders,
+    listTags: mocks.listTags
   }
 }))
 
@@ -21,9 +23,14 @@ describe('EndpointForm', () => {
     mocks.testEndpointRequest.mockReset()
     mocks.getLastProxy.mockReset()
     mocks.getTemplatePlaceholders.mockReset()
+    mocks.listTags.mockReset()
     mocks.getLastProxy.mockResolvedValue({ available: false })
     mocks.getTemplatePlaceholders.mockResolvedValue({
       items: ['url', 'checked_at', 'condition_type', 'duration_ms', 'response_body', 'response_headers']
+    })
+    mocks.listTags.mockResolvedValue({
+      items: [{ id: 'tag-1', name: 'prod', color: 'teal' }],
+      colors: ['slate', 'blue', 'teal', 'green', 'amber', 'rose', 'violet', 'gray']
     })
     mocks.testEndpointRequest.mockResolvedValue({
       status_code: 202,
@@ -57,7 +64,7 @@ describe('EndpointForm', () => {
     await wrapper.get('input[placeholder="9050"]').setValue('9050')
     await wrapper.get('input[autocomplete="off"]').setValue('proxy-user')
     await wrapper.get('input[placeholder="Optional with username"]').setValue('proxy-pass')
-    await wrapper.get('button[type="button"]').trigger('click')
+    await wrapper.findAll('button').find((button) => button.text() === 'Add header')?.trigger('click')
     await wrapper.get('input[placeholder="Header name"]').setValue('X-Test')
     await wrapper.get('input[placeholder="Value"]').setValue('value')
 
@@ -126,6 +133,25 @@ describe('EndpointForm', () => {
       ?.trigger('click')
 
     expect((template.element as HTMLTextAreaElement).value).toBe('Existing template\n{{url}}')
+  })
+
+  it('adds tags to the endpoint payload', async () => {
+    const wrapper = mount(EndpointForm)
+    await flushPromises()
+
+    await wrapper.get('input[aria-label="Tag name"]').setValue('Prod')
+    await wrapper.get('button[aria-label="Teal"]').trigger('click')
+    await wrapper.findAll('button').find((button) => button.text() === 'Add tag')?.trigger('click')
+
+    expect(wrapper.text()).toContain('prod')
+
+    await wrapper.find('form').trigger('submit')
+
+    expect(wrapper.emitted('save')?.[0]?.[0]).toEqual(
+      expect.objectContaining({
+        tags: [{ name: 'prod', color: 'teal' }]
+      })
+    )
   })
 
   it('reuses the last configured SOCKS5 proxy', async () => {
@@ -209,6 +235,7 @@ describe('EndpointForm', () => {
           notify_condition: { type: 'status_code_changed' },
           notification_template: '',
           screenshot_on_match: false,
+          tags: [],
           active: true,
           state: 'unknown',
           created_at: new Date().toISOString(),
