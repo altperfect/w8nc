@@ -63,7 +63,7 @@ const testBusy = ref(false)
 const testAttempted = ref(false)
 const testError = ref('')
 const testResult = ref<EndpointTestResult | null>(null)
-const requestBodyOpen = ref(false)
+const requestBodyOpen = ref(Boolean(props.endpoint?.request_body_enabled))
 const lastProxy = ref<ProxyConfig | null>(null)
 const lastProxyLoaded = ref(false)
 const proxyReusePromptVisible = ref(false)
@@ -100,7 +100,7 @@ const testTitle = computed(() => {
 const requestBodySummary = computed(() => {
   const length = String(state.request_body || '').length
   if (length > 0) return `${length} characters`
-  if (requestBodyOpen.value) return 'Enabled'
+  if (requestBodyOpen.value) return 'Empty'
   return 'Optional'
 })
 const lastProxyTarget = computed(() => {
@@ -128,7 +128,7 @@ watch(
 watch(
   () => state.request_body,
   (body) => {
-    state.request_body_enabled = requestBodyOpen.value || String(body || '').length > 0
+    state.request_body_enabled = String(body || '').length > 0
   }
 )
 
@@ -212,7 +212,7 @@ function appendTemplatePlaceholder(placeholder: string) {
 
 function currentInput(): EndpointInput {
   const requestBody = state.request_body || ''
-  const requestBodyEnabled = requestBodyOpen.value || String(requestBody).length > 0
+  const requestBodyEnabled = String(requestBody).length > 0
   return {
     ...state,
     name: state.name ? String(state.name).trim() : null,
@@ -235,7 +235,7 @@ function currentInput(): EndpointInput {
 
 function handleRequestBodyToggle(event: Event) {
   requestBodyOpen.value = (event.target as HTMLDetailsElement).open
-  state.request_body_enabled = requestBodyOpen.value || String(state.request_body || '').length > 0
+  state.request_body_enabled = String(state.request_body || '').length > 0
 }
 
 function sanitizeTagDraft(event: Event) {

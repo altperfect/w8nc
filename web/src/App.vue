@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { Activity, LogOut, Settings, X } from '@lucide/vue'
+import { computed, onMounted, ref } from 'vue'
+import { Activity, LogOut, Moon, Settings, Sun, X } from '@lucide/vue'
 import { api } from './api/client'
 import LoginPage from './pages/LoginPage.vue'
 import DashboardPage from './pages/DashboardPage.vue'
@@ -11,6 +11,27 @@ const loading = ref(true)
 const me = ref<MeResponse | null>(null)
 const showSettings = ref(false)
 const health = ref<{ status: string; database: string; notify_binary: string } | null>(null)
+type Theme = 'dark' | 'light'
+
+function preferredTheme(): Theme {
+  const stored = window.localStorage.getItem('theme')
+  if (stored === 'dark' || stored === 'light') return stored
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
+const theme = ref<Theme>(preferredTheme())
+const themeTitle = computed(() => (theme.value === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'))
+
+function applyTheme() {
+  document.documentElement.dataset.theme = theme.value
+  document.documentElement.style.colorScheme = theme.value
+  window.localStorage.setItem('theme', theme.value)
+}
+
+function toggleTheme() {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark'
+  applyTheme()
+}
 
 async function loadSession() {
   loading.value = true
@@ -27,11 +48,24 @@ async function logout() {
   await loadSession()
 }
 
-onMounted(loadSession)
+onMounted(() => {
+  applyTheme()
+  void loadSession()
+})
 </script>
 
 <template>
   <main class="app-shell">
+    <button
+      v-if="loading || (me?.auth_enabled && !me.authenticated)"
+      class="icon-button theme-toggle floating-theme-toggle"
+      :title="themeTitle"
+      :aria-label="themeTitle"
+      @click="toggleTheme"
+    >
+      <Sun v-if="theme === 'dark'" :size="16" />
+      <Moon v-else :size="16" />
+    </button>
     <div v-if="loading" class="loading">Loading...</div>
     <LoginPage v-else-if="me?.auth_enabled && !me.authenticated" @logged-in="loadSession" />
     <template v-else>
@@ -49,6 +83,10 @@ onMounted(loadSession)
           <button class="nav-button" :class="{ active: showSettings }" @click="showSettings = true">
             <Settings :size="15" />
             Settings
+          </button>
+          <button class="icon-button theme-toggle" :title="themeTitle" :aria-label="themeTitle" @click="toggleTheme">
+            <Sun v-if="theme === 'dark'" :size="16" />
+            <Moon v-else :size="16" />
           </button>
           <button v-if="me?.auth_enabled" class="icon-button" title="Logout" @click="logout">
             <LogOut :size="16" />

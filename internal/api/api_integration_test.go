@@ -125,6 +125,49 @@ func TestEndpointRequestBodyValidationAPI(t *testing.T) {
 	}
 }
 
+func TestEndpointTestRequestSendsBodyForGET(t *testing.T) {
+	requestBody := "should-send"
+	bodySeen := make(chan string, 1)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		bodySeen <- string(data)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer target.Close()
+
+	server := &api.Server{
+		Config: config.Config{
+			AuthEnabled:         false,
+			AllowPrivateTargets: true,
+		},
+		Auth: auth.NewManager(nil, false, "test-secret", false),
+	}
+
+	result := doJSON[struct {
+		StatusCode *int `json:"status_code"`
+	}](t, server, http.MethodPost, "/api/endpoints/test-request", models.EndpointInput{
+		URL:                target.URL + "/probe",
+		HTTPMethod:         "GET",
+		RequestBodyEnabled: true,
+		RequestBody:        requestBody,
+		Active:             true,
+	}, http.StatusOK)
+	if result.StatusCode == nil || *result.StatusCode != http.StatusNotFound {
+		t.Fatalf("status_code=%v", result.StatusCode)
+	}
+	select {
+	case got := <-bodySeen:
+		if got != requestBody {
+			t.Fatalf("request body=%q, want %q", got, requestBody)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("target did not receive request")
+	}
+}
+
 func TestTemplatePlaceholdersAPI(t *testing.T) {
 	server := &api.Server{
 		Config: config.Config{AuthEnabled: false},

@@ -29,6 +29,7 @@ func New(timeout time.Duration, maxBytes int64, allowPrivate bool, secrets *secr
 	dialer := &net.Dialer{Timeout: timeout}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
+	transport.DisableKeepAlives = true
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		if allowPrivate {
 			return dialer.DialContext(ctx, network, address)
@@ -155,6 +156,7 @@ func (p *Pinger) clientFor(endpoint models.Endpoint) (*http.Client, error) {
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
+	transport.DisableKeepAlives = true
 	dialer := socks5.Dialer{
 		ProxyAddress: endpoint.Proxy.Address,
 		Username:     endpoint.Proxy.Username,

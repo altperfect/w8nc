@@ -256,7 +256,6 @@ describe('EndpointForm', () => {
     const body = '<xml>\n  <probe enabled="true" />\n</xml>'
 
     await wrapper.get('input[placeholder="https://example.com/admin"]').setValue('https://example.com/api')
-    await wrapper.get('select').setValue('POST')
     const requestBodyDetails = wrapper.get('.request-body-field')
     ;(requestBodyDetails.element as HTMLDetailsElement).open = true
     await requestBodyDetails.trigger('toggle')
@@ -268,9 +267,51 @@ describe('EndpointForm', () => {
 
     expect(mocks.testEndpointRequest).toHaveBeenCalledWith(
       expect.objectContaining({
-        http_method: 'POST',
+        http_method: 'GET',
         request_body_enabled: true,
         request_body: body
+      })
+    )
+  })
+
+  it('opens saved request body details and keeps the saved body in the payload', async () => {
+    const wrapper = mount(EndpointForm, {
+      props: {
+        endpoint: {
+          id: 'endpoint-1',
+          name: 'API',
+          description: '',
+          url: 'https://example.com/api',
+          http_method: 'GET',
+          headers: [],
+          request_body_enabled: true,
+          request_body: '{"saved":true}',
+          proxy: { enabled: false },
+          ping_interval_seconds: 15,
+          ping_interval: '15s',
+          notify_once: true,
+          notify_condition: { type: 'status_code_changed' },
+          notification_template: '',
+          screenshot_on_match: false,
+          tags: [],
+          active: true,
+          state: 'unknown',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          version: 1
+        }
+      }
+    })
+
+    expect((wrapper.get('.request-body-field').element as HTMLDetailsElement).open).toBe(true)
+
+    await wrapper.find('form').trigger('submit')
+
+    expect(wrapper.emitted('save')?.[0]?.[0]).toEqual(
+      expect.objectContaining({
+        http_method: 'GET',
+        request_body_enabled: true,
+        request_body: '{"saved":true}'
       })
     )
   })
@@ -304,7 +345,7 @@ describe('EndpointForm', () => {
       }
     })
 
-    expect((wrapper.get('.request-body-field').element as HTMLDetailsElement).open).toBe(false)
+    expect((wrapper.get('.request-body-field').element as HTMLDetailsElement).open).toBe(true)
 
     await wrapper.get('textarea[aria-label="Request body"]').setValue('')
     await wrapper.find('form').trigger('submit')

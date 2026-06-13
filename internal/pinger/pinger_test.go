@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +45,34 @@ func TestPingSendsConfiguredRequestBodyForAnyMethod(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("target did not receive request")
+	}
+}
+
+func TestPingDoesNotReuseHTTPConnections(t *testing.T) {
+	var newConnections atomic.Int32
+	target := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	target.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			newConnections.Add(1)
+		}
+	}
+	target.Start()
+	defer target.Close()
+
+	p := New(2*time.Second, 1024, true, nil)
+	for i := 0; i < 2; i++ {
+		result := p.Ping(context.Background(), models.Endpoint{
+			URL:        target.URL,
+			HTTPMethod: "GET",
+		})
+		if result.Error != nil {
+			t.Fatalf("Ping error=%s", *result.Error)
+		}
+	}
+	if got := newConnections.Load(); got < 2 {
+		t.Fatalf("new connections=%d, want at least 2", got)
 	}
 }
 
