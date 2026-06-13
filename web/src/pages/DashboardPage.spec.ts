@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
   activateEndpoint: vi.fn(),
   deactivateEndpoint: vi.fn(),
   pingNow: vi.fn(),
-  listChecks: vi.fn()
+  listChecks: vi.fn(),
+  retryScreenshotAttempt: vi.fn()
 }))
 
 vi.mock('../api/client', () => ({
@@ -18,13 +19,21 @@ vi.mock('../api/client', () => ({
     activateEndpoint: mocks.activateEndpoint,
     deactivateEndpoint: mocks.deactivateEndpoint,
     pingNow: mocks.pingNow,
-    listChecks: mocks.listChecks
+    listChecks: mocks.listChecks,
+    retryScreenshotAttempt: mocks.retryScreenshotAttempt,
+    screenshotImageURL: (id: string) => `/api/screenshot-attempts/${id}/image`
   }
 }))
 
 describe('DashboardPage', () => {
   beforeEach(() => {
     mocks.listEndpoints.mockReset()
+    mocks.deleteEndpoint.mockReset()
+    mocks.activateEndpoint.mockReset()
+    mocks.deactivateEndpoint.mockReset()
+    mocks.pingNow.mockReset()
+    mocks.listChecks.mockReset()
+    mocks.retryScreenshotAttempt.mockReset()
     mocks.listEndpoints.mockResolvedValue({
       items: [
         {
@@ -40,6 +49,7 @@ describe('DashboardPage', () => {
           notify_condition: { type: 'status_code_changed' },
           notify_once: true,
           notification_template: '',
+          screenshot_on_match: false,
           active: true,
           state: 'unknown',
           created_at: '2026-06-12T00:00:00Z',
@@ -51,6 +61,7 @@ describe('DashboardPage', () => {
       page_size: 20,
       total: 1
     })
+    mocks.listChecks.mockResolvedValue({ items: [], page: 1, page_size: 20, total: 0 })
   })
 
   it('renders endpoints returned by the API', async () => {
@@ -99,5 +110,63 @@ describe('DashboardPage', () => {
     await flushPromises()
 
     expect(mocks.deleteEndpoint).toHaveBeenCalledWith('endpoint-1')
+  })
+
+  it('shows failed screenshot attempts and retries them', async () => {
+    mocks.listChecks.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'check-1',
+          endpoint_id: 'endpoint-1',
+          started_at: '2026-06-12T00:00:00Z',
+          finished_at: '2026-06-12T00:00:01Z',
+          status_code: 200,
+          response_length: 123,
+          duration_ms: 100,
+          truncated: false,
+          condition_matched: true,
+          created_at: '2026-06-12T00:00:01Z',
+          screenshot_attempts: [
+            {
+              id: 'shot-1',
+              endpoint_id: 'endpoint-1',
+              endpoint_check_id: 'check-1',
+              status: 'failed',
+              error: 'chromium failed',
+              image_available: false,
+              created_at: '2026-06-12T00:00:01Z',
+              updated_at: '2026-06-12T00:00:01Z'
+            }
+          ]
+        }
+      ],
+      page: 1,
+      page_size: 20,
+      total: 1
+    })
+    mocks.retryScreenshotAttempt.mockResolvedValueOnce({
+      id: 'shot-1',
+      endpoint_id: 'endpoint-1',
+      endpoint_check_id: 'check-1',
+      status: 'pending',
+      image_available: false,
+      created_at: '2026-06-12T00:00:01Z',
+      updated_at: '2026-06-12T00:00:02Z'
+    })
+    const wrapper = mount(DashboardPage)
+    await flushPromises()
+
+    await wrapper.find('button[title="View check history"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Screenshot')
+    expect(wrapper.text()).toContain('Failed')
+    expect(wrapper.text()).toContain('chromium failed')
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Retry')?.trigger('click')
+    await flushPromises()
+
+    expect(mocks.retryScreenshotAttempt).toHaveBeenCalledWith('shot-1')
+    wrapper.unmount()
   })
 })

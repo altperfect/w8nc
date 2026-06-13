@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Edit3, History, Plus, Power, RefreshCw, Search, Trash2, X } from '@lucide/vue'
 import { api } from '../api/client'
 import EndpointForm from '../components/EndpointForm.vue'
-import type { Endpoint, EndpointCheck, EndpointInput } from '../types'
+import type { Endpoint, EndpointCheck, EndpointInput, ScreenshotAttempt } from '../types'
 
 const endpoints = ref<Endpoint[]>([])
 const total = ref(0)
@@ -17,6 +17,8 @@ const deleteBusy = ref(false)
 const deleteError = ref('')
 const detail = ref<Endpoint | null>(null)
 const checks = ref<EndpointCheck[]>([])
+const screenshotPreview = ref<ScreenshotAttempt | null>(null)
+const retryingScreenshot = ref('')
 
 const filters = reactive({
   page: 1,
@@ -111,8 +113,21 @@ async function action(endpoint: Endpoint, kind: 'activate' | 'deactivate' | 'pin
 
 async function showChecks(endpoint: Endpoint) {
   detail.value = endpoint
-  const response = await api.listChecks(endpoint.id)
+  await loadChecks()
+  startHistoryRefresh()
+}
+
+async function loadChecks() {
+  if (!detail.value) return
+  const response = await api.listChecks(detail.value.id)
   checks.value = Array.isArray(response.items) ? response.items : []
+}
+
+function closeChecks() {
+  detail.value = null
+  checks.value = []
+  screenshotPreview.value = null
+  clearHistoryRefresh()
 }
 
 function openCreate() {
@@ -168,13 +183,63 @@ function resultLabel(state: string) {
   return 'Not checked'
 }
 
+function screenshotStatusLabel(attempt: ScreenshotAttempt) {
+  if (attempt.status === 'pending') return 'Pending'
+  if (attempt.status === 'capturing') return 'Capturing'
+  if (attempt.status === 'succeeded') return 'Succeeded'
+  if (attempt.status === 'unsupported') return 'Unsupported'
+  return 'Failed'
+}
+
+function screenshotImageURL(attempt: ScreenshotAttempt) {
+  return api.screenshotImageURL(attempt.id)
+}
+
+async function retryScreenshot(attempt: ScreenshotAttempt) {
+  if (attempt.status !== 'failed' || retryingScreenshot.value) return
+  retryingScreenshot.value = attempt.id
+  try {
+    const updated = await api.retryScreenshotAttempt(attempt.id)
+    replaceScreenshotAttempt(updated)
+    await loadChecks()
+  } finally {
+    retryingScreenshot.value = ''
+  }
+}
+
+function replaceScreenshotAttempt(updated: ScreenshotAttempt) {
+  for (const check of checks.value) {
+    const attempts = check.screenshot_attempts || []
+    const index = attempts.findIndex((attempt) => attempt.id === updated.id)
+    if (index !== -1) {
+      attempts[index] = updated
+      check.screenshot_attempts = attempts
+      return
+    }
+  }
+}
+
+function startHistoryRefresh() {
+  clearHistoryRefresh()
+  historyTimer = window.setInterval(loadChecks, 3000)
+}
+
+function clearHistoryRefresh() {
+  if (historyTimer) {
+    window.clearInterval(historyTimer)
+    historyTimer = undefined
+  }
+}
+
 let timer: number | undefined
+let historyTimer: number | undefined
 onMounted(() => {
   void load()
   timer = window.setInterval(load, 5000)
 })
 onUnmounted(() => {
   if (timer) window.clearInterval(timer)
+  clearHistoryRefresh()
 })
 </script>
 
@@ -380,7 +445,7 @@ onUnmounted(() => {
     <section class="modal panel">
       <header class="modal-header">
         <h2>Check history</h2>
-        <button class="icon-button" title="Close" @click="detail = null"><X :size="16" /></button>
+        <button class="icon-button" title="Close" @click="closeChecks"><X :size="16" /></button>
       </header>
       <table>
         <thead>
@@ -394,19 +459,51 @@ onUnmounted(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="check in checks" :key="check.id">
-            <td>{{ formatDate(check.finished_at) }}</td>
-            <td>{{ check.status_code ?? '' }}</td>
-            <td>{{ check.response_length ?? '' }}{{ check.truncated ? ' truncated' : '' }}</td>
-            <td>{{ check.duration_ms }}ms</td>
-            <td>{{ check.condition_matched ? 'Yes' : 'No' }}</td>
-            <td>{{ check.error || '' }}</td>
-          </tr>
+          <template v-for="check in checks" :key="check.id">
+            <tr>
+              <td>{{ formatDate(check.finished_at) }}</td>
+              <td>{{ check.status_code ?? '' }}</td>
+              <td>{{ check.response_length ?? '' }}{{ check.truncated ? ' truncated' : '' }}</td>
+              <td>{{ check.duration_ms }}ms</td>
+              <td>{{ check.condition_matched ? 'Yes' : 'No' }}</td>
+              <td>{{ check.error || '' }}</td>
+            </tr>
+            <tr v-for="attempt in check.screenshot_attempts || []" :key="attempt.id" class="screenshot-attempt-row">
+              <td colspan="6">
+                <div class="screenshot-attempt">
+                  <span class="screenshot-attempt-label">Screenshot</span>
+                  <span>{{ screenshotStatusLabel(attempt) }}</span>
+                  <span v-if="attempt.error" class="muted">{{ attempt.error }}</span>
+                  <button v-if="attempt.image_available" type="button" @click="screenshotPreview = attempt">View</button>
+                  <button
+                    v-if="attempt.status === 'failed'"
+                    type="button"
+                    :disabled="retryingScreenshot === attempt.id"
+                    @click="retryScreenshot(attempt)"
+                  >
+                    {{ retryingScreenshot === attempt.id ? 'Retrying...' : 'Retry' }}
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </template>
           <tr v-if="checks.length === 0">
             <td colspan="6" class="empty">No checks recorded.</td>
           </tr>
         </tbody>
       </table>
+    </section>
+  </div>
+
+  <div v-if="screenshotPreview" class="modal-backdrop" @click.self="screenshotPreview = null">
+    <section class="modal panel screenshot-modal">
+      <header class="modal-header">
+        <h2>Screenshot</h2>
+        <button class="icon-button" title="Close" @click="screenshotPreview = null"><X :size="16" /></button>
+      </header>
+      <div class="screenshot-preview">
+        <img :src="screenshotImageURL(screenshotPreview)" alt="Captured endpoint screenshot" />
+      </div>
     </section>
   </div>
 </template>

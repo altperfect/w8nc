@@ -183,6 +183,7 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 		DeactivateAfter:      "2h",
 		NotifyCondition:      condition("status_code_changed", nil),
 		NotificationTemplate: models.DefaultNotificationTemplate,
+		ScreenshotOnMatch:    true,
 		Active:               true,
 	}
 
@@ -199,6 +200,9 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	}
 	if !created.RequestBodyEnabled || created.RequestBody != createBody.RequestBody {
 		t.Fatalf("request body was not persisted on create: enabled=%v body=%q", created.RequestBodyEnabled, created.RequestBody)
+	}
+	if !created.ScreenshotOnMatch {
+		t.Fatalf("screenshot flag was not persisted on create")
 	}
 
 	fetched := doJSON[models.Endpoint](t, server, http.MethodGet, "/api/endpoints/"+created.ID, nil, http.StatusOK)
@@ -231,6 +235,79 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	server.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("delete status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestEndpointScreenshotValidationAPI(t *testing.T) {
+	store := integrationStore(t)
+	server := &api.Server{
+		Config: config.Config{
+			AuthEnabled:         false,
+			AllowPrivateTargets: true,
+			MinPingInterval:     5 * time.Second,
+			MaxPingInterval:     30 * 24 * time.Hour,
+		},
+		Store: store,
+		Auth:  auth.NewManager(store, false, "test-secret", false),
+	}
+	body := models.EndpointInput{
+		URL:                  "https://example.com/admin",
+		HTTPMethod:           "POST",
+		PingInterval:         "15s",
+		NotifyCondition:      condition("status_code_changed", nil),
+		NotificationTemplate: models.DefaultNotificationTemplate,
+		ScreenshotOnMatch:    true,
+		Active:               true,
+	}
+	response := postJSON(t, server, "/api/endpoints", body, http.StatusBadRequest)
+	if !strings.Contains(response.Body.String(), "screenshots are supported only for GET") {
+		t.Fatalf("unexpected screenshot validation error: %s", response.Body.String())
+	}
+}
+
+func TestScreenshotRetryAPI(t *testing.T) {
+	store := integrationStore(t)
+	server := &api.Server{
+		Config: config.Config{AuthEnabled: false},
+		Store:  store,
+		Auth:   auth.NewManager(store, false, "test-secret", false),
+	}
+	conditionJSON, err := json.Marshal(condition("status_code_changed", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var endpointID string
+	if err := store.Pool.QueryRow(context.Background(), `
+		INSERT INTO endpoints (url, http_method, ping_interval_seconds, notify_condition, notification_template, active)
+		VALUES ('https://example.com/admin', 'GET', 15, $1, $2, FALSE)
+		RETURNING id::text`, conditionJSON, models.DefaultNotificationTemplate).Scan(&endpointID); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.DeleteEndpoint(context.Background(), endpointID) }()
+
+	var checkID string
+	if err := store.Pool.QueryRow(context.Background(), `
+		INSERT INTO endpoint_checks (endpoint_id, started_at, finished_at, duration_ms)
+		VALUES ($1, now(), now(), 10)
+		RETURNING id::text`, endpointID).Scan(&checkID); err != nil {
+		t.Fatal(err)
+	}
+	var attemptID string
+	if err := store.Pool.QueryRow(context.Background(), `
+		INSERT INTO screenshot_attempts (endpoint_id, endpoint_check_id, status, error)
+		VALUES ($1, $2, 'failed', 'chromium failed')
+		RETURNING id::text`, endpointID, checkID).Scan(&attemptID); err != nil {
+		t.Fatal(err)
+	}
+
+	retried := doJSON[models.ScreenshotAttempt](t, server, http.MethodPost, "/api/screenshot-attempts/"+attemptID+"/retry", nil, http.StatusOK)
+	if retried.Status != "pending" || retried.Error != nil || retried.ImageAvailable {
+		t.Fatalf("unexpected retried attempt: %+v", retried)
+	}
+
+	response := postJSON(t, server, "/api/screenshot-attempts/"+attemptID+"/retry", nil, http.StatusConflict)
+	if !strings.Contains(response.Body.String(), "not failed") {
+		t.Fatalf("unexpected retry conflict: %s", response.Body.String())
 	}
 }
 

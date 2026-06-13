@@ -46,6 +46,7 @@ const state = reactive<EndpointInput>({
   deactivate_after: null,
   notify_condition: props.endpoint?.notify_condition || { type: 'status_code_changed' },
   notification_template: props.endpoint?.notification_template || defaultTemplate,
+  screenshot_on_match: props.endpoint?.screenshot_on_match || false,
   active: props.endpoint?.active ?? true
 })
 const pingInterval = reactive<DurationParts>(parseDuration(props.endpoint?.ping_interval || '15s', 15, 's'))
@@ -88,6 +89,15 @@ const lastProxyTarget = computed(() => {
   if (parts.host && parts.port) return `${parts.host}:${parts.port}`
   return parts.host || lastProxy.value.address
 })
+const screenshotSupported = computed(() => state.http_method.toUpperCase() === 'GET')
+if (!screenshotSupported.value) state.screenshot_on_match = false
+
+watch(
+  () => state.http_method,
+  () => {
+    if (!screenshotSupported.value) state.screenshot_on_match = false
+  }
+)
 
 watch(
   () => state.proxy.enabled,
@@ -482,6 +492,23 @@ async function testRequest() {
       <label v-if="state.notify_condition.type === 'response_length_changed'">
         Tolerance bytes
         <input v-model.number="state.notify_condition.tolerance_bytes" type="number" min="0" />
+      </label>
+      <label class="checkbox-line screenshot-option wide">
+        <input v-model="state.screenshot_on_match" type="checkbox" :disabled="!screenshotSupported" />
+        <span class="screenshot-option-copy">
+          <span class="screenshot-option-title">
+            <span>Screenshot on match</span>
+            <span class="template-info screenshot-help">
+              <button type="button" class="icon-button template-info-button" aria-label="Show screenshot help">
+                <Info :size="14" />
+              </button>
+              <span class="template-tooltip" role="tooltip">
+                Screenshotting is supported only with GET methods. Instead, you can use the response_body placeholder in the notification template.
+              </span>
+            </span>
+          </span>
+          <span class="checkbox-hint">Attempt to take a screenshot of the page when the condition is met.</span>
+        </span>
       </label>
       <label class="wide">
         <span class="template-label-row">

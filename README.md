@@ -61,6 +61,13 @@ The server is configured with environment variables:
 | `PING_WORKER_CONCURRENCY` | `10` | Bounded ping worker count |
 | `MIN_PING_INTERVAL` | `5s` | Minimum accepted endpoint interval |
 | `MAX_PING_INTERVAL` | `30d` | Maximum accepted endpoint interval |
+| `SCREENSHOTS_ENABLED` | `true` | Enables screenshot attempts for matched GET endpoint conditions |
+| `SCREENSHOT_CHROME_PATH` | `/usr/bin/chromium-browser` | Chromium executable used for screenshots |
+| `SCREENSHOT_STORAGE_PATH` | `/app/data/screenshots` | PNG storage directory for captured screenshots |
+| `SCREENSHOT_TIMEOUT` | `20s` | Per-screenshot browser timeout |
+| `SCREENSHOT_VIEWPORT_WIDTH` | `1365` | Screenshot browser viewport width |
+| `SCREENSHOT_VIEWPORT_HEIGHT` | `900` | Screenshot browser viewport height |
+| `SCREENSHOT_MAX_CONCURRENCY` | `1` | Max screenshot attempts processed per worker tick |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Allows localhost/private/metadata targets when true |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
 
@@ -102,6 +109,14 @@ V1 supports the following conditions for notifications:
 - `response_length_changed`: first non-truncated response establishes a baseline, later length differences greater than tolerance fire
 
 When a condition matches, the app creates one `notification_events` row, deactivates the endpoint, sets `notified_at`, and sets `deactivated_reason=notify_once_condition_matched`.
+
+## Screenshots
+
+Endpoint create/edit supports an optional screenshot-on-match setting. Screenshotting is supported only for `GET` endpoints; the frontend disables the option for other methods, and the backend rejects unsupported saves.
+
+When a condition matches, the normal Telegram notification is still queued first. Screenshot capture runs asynchronously after that notification is sent. If capture or upload fails, the ping result and original notification are left unchanged.
+
+Successful screenshots are sent to Telegram as a photo with the caption `Screenshot of <url>`. Screenshot attempts are also shown in check history. Failed attempts can be retried from the check history modal once the previous attempt is finished.
 
 ## Sensitive Headers
 

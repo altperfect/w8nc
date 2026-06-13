@@ -135,6 +135,10 @@ func (s *Server) serveProtectedAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleLastProxy(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/screenshot-attempts/") {
+		s.handleScreenshotAttemptPath(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/endpoints/") {
 		s.handleEndpointPath(w, r)
 		return
@@ -452,6 +456,46 @@ func (s *Server) handleLastProxy(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleScreenshotAttemptPath(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/screenshot-attempts/")
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	if len(parts) != 2 || parts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+	switch parts[1] {
+	case "image":
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		imagePath, contentType, err := s.Store.ScreenshotImage(r.Context(), parts[0])
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		http.ServeFile(w, r, imagePath)
+	case "retry":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		attempt, err := s.Store.RetryScreenshotAttempt(r.Context(), parts[0])
+		if err != nil {
+			if errors.Is(err, db.ErrInvalidState) {
+				writeError(w, http.StatusConflict, "screenshot attempt is not failed")
+				return
+			}
+			writeStoreError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, attempt)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 func (s *Server) writeEndpointMutation(w http.ResponseWriter, endpoint models.Endpoint, err error) {
 	if err != nil {
 		writeStoreError(w, err)
@@ -471,6 +515,9 @@ func (s *Server) endpointRecord(ctx context.Context, input models.EndpointInput,
 	}
 	if !allowedMethod(method) {
 		return db.EndpointRecord{}, false, fmt.Errorf("unsupported HTTP method")
+	}
+	if input.ScreenshotOnMatch && method != http.MethodGet {
+		return db.EndpointRecord{}, false, fmt.Errorf("screenshots are supported only for GET endpoints")
 	}
 	if err := security.ValidateHeaders(input.Headers); err != nil {
 		return db.EndpointRecord{}, false, err
@@ -520,7 +567,8 @@ func (s *Server) endpointRecord(ctx context.Context, input models.EndpointInput,
 		Name: name, URL: url, HTTPMethod: method, Headers: headers,
 		RequestBodyEnabled: input.RequestBodyEnabled, RequestBody: requestBody, Proxy: proxy,
 		PingIntervalSeconds: intervalSeconds, DeactivateAfterSeconds: deactivateAfterSeconds,
-		NotifyCondition: input.NotifyCondition, NotificationTemplate: template, Active: input.Active,
+		NotifyCondition: input.NotifyCondition, NotificationTemplate: template,
+		ScreenshotOnMatch: input.ScreenshotOnMatch, Active: input.Active,
 	}, intervalChanged, nil
 }
 

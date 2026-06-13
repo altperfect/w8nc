@@ -208,6 +208,7 @@ describe('EndpointForm', () => {
           notify_once: true,
           notify_condition: { type: 'status_code_changed' },
           notification_template: '',
+          screenshot_on_match: false,
           active: true,
           state: 'unknown',
           created_at: new Date().toISOString(),
@@ -226,6 +227,26 @@ describe('EndpointForm', () => {
         request_body: ''
       })
     )
+  })
+
+  it('allows screenshot capture only for GET endpoints', async () => {
+    const wrapper = mount(EndpointForm)
+    const screenshotCheckbox = () =>
+      wrapper
+        .findAll('label')
+        .find((label) => label.text().includes('Screenshot on match'))!
+        .find('input')
+
+    expect((screenshotCheckbox().element as HTMLInputElement).disabled).toBe(false)
+    expect(wrapper.text()).toContain('Screenshotting is supported only with GET methods')
+
+    await screenshotCheckbox().setValue(true)
+    await wrapper.get('select').setValue('POST')
+
+    expect((screenshotCheckbox().element as HTMLInputElement).disabled).toBe(true)
+    await wrapper.find('form').trigger('submit')
+
+    expect(wrapper.emitted('save')?.[0]?.[0]).toEqual(expect.objectContaining({ screenshot_on_match: false }))
   })
 
   it('hides the reuse proxy prompt after five seconds', async () => {
