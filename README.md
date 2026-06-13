@@ -138,19 +138,7 @@ Settings also supports a SOCKS5 proxy for Telegram notifications. When enabled, 
 
 ## Development
 
-Common workflows are available through the root Makefile:
-
-```sh
-make test      # frontend and Go tests
-make build     # frontend build, embedded static assets, Go server build
-make init-secrets  # create local .env with generated secrets
-make deploy    # docker compose build + up
-make redeploy  # tests + docker compose build + up
-make rotate-encryption-key  # re-encrypt saved secrets under a new generated key
-make set-password  # generate and set a new login password
-make health    # app health endpoint
-make reset-login-attempts  # clear login rate-limit lockouts
-```
+Common workflows are available through the root Makefile, just run `make help` to see all the options.
 
 Backend:
 
@@ -183,3 +171,7 @@ GOCACHE=/tmp/w8nc-gocache GOMODCACHE=/tmp/w8nc-gomodcache go build ./cmd/server
 - Confirm `/app/data` is writable by the app container.
 - Check container logs for `notification dispatch failed`.
 - Failed events retry automatically with backoff.
+
+## Reverse Proxy
+
+For detailed instructions on how to run the app behind a reverse proxy, read [Hosting behind a reverse-proxy.md](<Hosting behind a reverse-proxy.md>).
