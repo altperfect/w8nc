@@ -411,6 +411,7 @@ function save() {
 }
 
 async function testRequest() {
+  if (testBusy.value) return
   testBusy.value = true
   testAttempted.value = true
   testError.value = ''

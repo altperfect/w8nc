@@ -76,6 +76,54 @@ func TestPingDoesNotReuseHTTPConnections(t *testing.T) {
 	}
 }
 
+func TestPingRetriesTransientErrorsForSafeMethods(t *testing.T) {
+	var hits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == 1 {
+			<-r.Context().Done()
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	p := New(50*time.Millisecond, 1024, true, nil)
+	result := p.Ping(context.Background(), models.Endpoint{
+		URL:        target.URL,
+		HTTPMethod: "GET",
+	})
+	if result.Error != nil {
+		t.Fatalf("Ping error=%s", *result.Error)
+	}
+	if result.StatusCode == nil || *result.StatusCode != http.StatusOK {
+		t.Fatalf("status_code=%v, want %d", result.StatusCode, http.StatusOK)
+	}
+	if got := hits.Load(); got != 2 {
+		t.Fatalf("hits=%d, want 2", got)
+	}
+}
+
+func TestPingDoesNotRetryTransientErrorsForUnsafeMethods(t *testing.T) {
+	var hits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		<-r.Context().Done()
+	}))
+	defer target.Close()
+
+	p := New(50*time.Millisecond, 1024, true, nil)
+	result := p.Ping(context.Background(), models.Endpoint{
+		URL:        target.URL,
+		HTTPMethod: "POST",
+	})
+	if result.Error == nil {
+		t.Fatal("Ping error=nil, want timeout")
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("hits=%d, want 1", got)
+	}
+}
+
 func TestPingUsesSocks5ProxyWithAuthentication(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))

@@ -56,6 +56,27 @@ func New(timeout time.Duration, maxBytes int64, allowPrivate bool, secrets *secr
 
 func (p *Pinger) Ping(ctx context.Context, endpoint models.Endpoint) models.PingResult {
 	started := time.Now().UTC()
+	attempts := 1
+	if retryableMethod(endpoint.HTTPMethod) {
+		attempts = 2
+	}
+	var best models.PingResult
+	for attempt := 1; attempt <= attempts; attempt++ {
+		result := p.pingOnce(ctx, endpoint, started)
+		if result.Error == nil {
+			return result
+		}
+		if attempt == 1 || (best.StatusCode == nil && result.StatusCode != nil) || (best.StatusCode == nil && result.StatusCode == nil) {
+			best = result
+		}
+		if attempt == attempts || !transientPingError(*result.Error) {
+			return best
+		}
+	}
+	return best
+}
+
+func (p *Pinger) pingOnce(ctx context.Context, endpoint models.Endpoint, started time.Time) models.PingResult {
 	result := models.PingResult{StartedAt: started}
 	ctx, cancel := context.WithTimeout(ctx, p.Timeout)
 	defer cancel()
@@ -144,6 +165,26 @@ func (p *Pinger) Ping(ctx context.Context, endpoint models.Endpoint) models.Ping
 	result.FinishedAt = time.Now().UTC()
 	result.DurationMS = int(result.FinishedAt.Sub(started).Milliseconds())
 	return result
+}
+
+func retryableMethod(method string) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
+func transientPingError(message string) bool {
+	lowered := strings.ToLower(message)
+	return strings.Contains(lowered, "context deadline exceeded") ||
+		strings.Contains(lowered, "client.timeout") ||
+		strings.Contains(lowered, "i/o timeout") ||
+		strings.Contains(lowered, "tls handshake timeout") ||
+		strings.Contains(lowered, "connection reset by peer") ||
+		strings.Contains(lowered, "unexpected eof") ||
+		strings.Contains(lowered, "read: connection timed out")
 }
 
 func (p *Pinger) clientFor(endpoint models.Endpoint) (*http.Client, error) {
