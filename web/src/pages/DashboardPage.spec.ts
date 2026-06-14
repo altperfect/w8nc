@@ -275,6 +275,21 @@ describe('DashboardPage', () => {
     wrapper.unmount()
   })
 
+  it('closes the check history modal when clicking outside it', async () => {
+    const wrapper = mount(DashboardPage)
+    await flushPromises()
+
+    await wrapper.find('button[title="View check history"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Check history')
+
+    await wrapper.findAll('.modal-backdrop').at(-1)?.trigger('click')
+
+    expect(wrapper.text()).not.toContain('Check history')
+    wrapper.unmount()
+  })
+
   it('loads more check history when scrolling near the bottom', async () => {
     const check = (id: string, status: number) => ({
       id,

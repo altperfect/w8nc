@@ -621,7 +621,7 @@ onUnmounted(() => {
     </section>
   </div>
 
-  <div v-if="detail" class="modal-backdrop">
+  <div v-if="detail" class="modal-backdrop" @click.self="closeChecks">
     <section class="modal panel history-modal">
       <header class="modal-header">
         <div>
