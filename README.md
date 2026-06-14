@@ -2,6 +2,8 @@
 
 Self-hosted endpoint monitoring for monitoring workflows. The app stores HTTP endpoints, pings active targets on their configured interval, records status/length/error metadata, evaluates notify-once conditions, and dispatches Telegram alerts through the ProjectDiscovery `notify` binary.
 
+![Dashboard](screenshots/dashboard.jpg)
+
 ## Quick Start
 
 ```sh
@@ -80,31 +82,6 @@ Create a Telegram bot with BotFather, get the bot token, and determine the chat 
 - Chat ID
 - Parse mode: `None`, `Markdown`, `MarkdownV2`, or `HTML`
 
-The token is encrypted before storage and is never returned by the API after saving. The server writes a provider config file under `/app/data` and invokes:
-
-```text
-notify -provider telegram -provider-config /app/data/notify-provider.yaml -bulk -silent
-```
-
-Messages are passed through stdin with `exec.CommandContext`; no shell is used.
-
-## Intervals
-
-Endpoint intervals use `digits + unit`:
-
-- `15s`
-- `1m`
-- `8h`
-- `2d`
-
-Days are exactly 24 hours. 
-
-## Tags
-
-Endpoints can have up to eight short tags. Tag names are normalized to lowercase, limited to 16 characters, and can use letters, numbers, hyphens, or underscores. Tags use a fixed muted color palette so dashboard chips stay readable.
-
-Tags appear under the endpoint URL in the dashboard table. Use the dashboard tag filter to show endpoints with a specific tag.
-
 ## Notify Conditions
 
 V1 supports the following conditions for notifications:
@@ -118,17 +95,9 @@ When a condition matches, the app creates one `notification_events` row, deactiv
 
 ## Screenshots
 
-Endpoint create/edit supports an optional screenshot-on-match setting. Screenshotting is supported only for `GET` endpoints; the frontend disables the option for other methods, and the backend rejects unsupported saves.
+Endpoint create/edit supports an optional screenshot-on-match setting. Screenshotting is supported only for `GET` endpoints.
 
-When a condition matches, the normal Telegram notification is still queued first. Screenshot capture runs asynchronously after that notification is sent. If capture or upload fails, the ping result and original notification are left unchanged.
-
-Successful screenshots are sent to Telegram as a photo with the caption `Screenshot of <url>`. Screenshot attempts are also shown in check history. Failed attempts can be retried from the check history modal once the previous attempt is finished.
-
-## Sensitive Headers
-
-Header sensitivity is auto-detected from names and values containing markers such as `authorization`, `token`, `api-key`, `secret`, `cookie`, `session`, and `jwt`. You can override it with the `Mask` control in the UI.
-
-Sensitive header values are encrypted at rest. After saving, the API only returns `********`, and editing an endpoint keeps the old encrypted value unless you replace it.
+Successful screenshots are sent to Telegram along with the initial notification. Screenshot attempts are also shown in check history. Failed attempts can be retried from the check history modal once the previous attempt is finished.
 
 ## SOCKS5 Proxies
 
@@ -139,38 +108,6 @@ Settings also supports a SOCKS5 proxy for Telegram notifications. When enabled, 
 ## Development
 
 Common workflows are available through the root Makefile, just run `make help` to see all the options.
-
-Backend:
-
-```sh
-GOCACHE=/tmp/w8nc-gocache GOMODCACHE=/tmp/w8nc-gomodcache go test ./...
-```
-
-Frontend:
-
-```sh
-cd web
-npm install
-npm run build
-npm test
-```
-
-To embed a freshly built frontend into the Go binary locally:
-
-```sh
-rm -rf internal/static/dist
-cp -R web/dist internal/static/dist
-GOCACHE=/tmp/w8nc-gocache GOMODCACHE=/tmp/w8nc-gomodcache go build ./cmd/server
-```
-
-## Troubleshooting Notifications
-
-- Check `/api/health`; `notify_binary` should be `ok`.
-- Confirm Telegram is enabled in Settings.
-- Confirm the token and chat ID are saved.
-- Confirm `/app/data` is writable by the app container.
-- Check container logs for `notification dispatch failed`.
-- Failed events retry automatically with backoff.
 
 ## Reverse Proxy
 
