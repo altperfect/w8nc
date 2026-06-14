@@ -274,4 +274,49 @@ describe('DashboardPage', () => {
     expect(mocks.retryScreenshotAttempt).toHaveBeenCalledWith('shot-1')
     wrapper.unmount()
   })
+
+  it('loads more check history when scrolling near the bottom', async () => {
+    const check = (id: string, status: number) => ({
+      id,
+      endpoint_id: 'endpoint-1',
+      started_at: '2026-06-12T00:00:00Z',
+      finished_at: '2026-06-12T00:00:01Z',
+      status_code: status,
+      response_length: 123,
+      duration_ms: 100,
+      truncated: false,
+      condition_matched: false,
+      created_at: '2026-06-12T00:00:01Z'
+    })
+    mocks.listChecks
+      .mockResolvedValueOnce({
+        items: [check('check-1', 200)],
+        page: 1,
+        page_size: 20,
+        total: 2
+      })
+      .mockResolvedValueOnce({
+        items: [check('check-2', 404)],
+        page: 2,
+        page_size: 20,
+        total: 2
+      })
+    const wrapper = mount(DashboardPage)
+    await flushPromises()
+
+    await wrapper.find('button[title="View check history"]').trigger('click')
+    await flushPromises()
+
+    const historyScroll = wrapper.get('.history-scroll')
+    Object.defineProperty(historyScroll.element, 'scrollTop', { value: 900, configurable: true })
+    Object.defineProperty(historyScroll.element, 'clientHeight', { value: 200, configurable: true })
+    Object.defineProperty(historyScroll.element, 'scrollHeight', { value: 1000, configurable: true })
+    await historyScroll.trigger('scroll')
+    await flushPromises()
+
+    expect(mocks.listChecks).toHaveBeenCalledWith('endpoint-1', 1, 20)
+    expect(mocks.listChecks).toHaveBeenCalledWith('endpoint-1', 2, 20)
+    expect(wrapper.text()).toContain('404')
+    wrapper.unmount()
+  })
 })

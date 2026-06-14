@@ -582,6 +582,30 @@ th {
   white-space: nowrap;
 }
 
+.method-cell {
+  width: 4.7rem;
+  min-width: 4.7rem;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.interval-cell {
+  width: 5.2rem;
+  min-width: 5.2rem;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.compact-cell-value {
+  display: inline-block;
+  min-width: max-content;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
 .condition-cell {
   width: 6.8rem;
   padding-left: 0.36rem;
@@ -1395,6 +1419,68 @@ button.tag-chip {
   width: min(980px, 100%);
 }
 
+.history-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.history-count {
+  margin: 0.18rem 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.history-scroll {
+  min-height: 0;
+  max-height: min(68vh, 42rem);
+  margin-top: 0.74rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.history-table {
+  table-layout: auto;
+  min-width: 46rem;
+}
+
+.history-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+.skeleton-row td {
+  padding-block: 0.72rem;
+}
+
+.skeleton-line {
+  display: block;
+  width: 100%;
+  height: 0.72rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-muted),
+    color-mix(in srgb, var(--border-strong) 65%, var(--surface-muted)),
+    var(--surface-muted)
+  );
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.1s linear infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
 .screenshot-preview {
   max-height: 76vh;
   overflow: auto;
@@ -1570,7 +1656,7 @@ button.tag-chip {
   }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1180px) {
   .table-wrap {
     border: 0;
     background: transparent;
@@ -1599,7 +1685,7 @@ button.tag-chip {
 
   .table-wrap tr {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(7.25rem, 1fr));
     gap: 0.46rem 0.72rem;
     padding: 0.68rem;
     border: 1px solid var(--border);
@@ -1635,12 +1721,14 @@ button.tag-chip {
     line-height: 1.35;
   }
 
-  .last-result-cell,
-  .name-cell,
-  .url-cell,
-  .condition-cell,
-  .date-cell,
-  .actions-cell {
+  .table-wrap .last-result-cell,
+  .table-wrap .name-cell,
+  .table-wrap .url-cell,
+  .table-wrap .method-cell,
+  .table-wrap .interval-cell,
+  .table-wrap .condition-cell,
+  .table-wrap .date-cell,
+  .table-wrap .actions-cell {
     width: auto;
   }
 
@@ -1657,6 +1745,14 @@ button.tag-chip {
 
   .condition-cell {
     text-align: left;
+  }
+
+  .table-wrap .method-cell,
+  .table-wrap .interval-cell {
+    min-width: 7.25rem;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
   }
 
   .condition-cell > span {

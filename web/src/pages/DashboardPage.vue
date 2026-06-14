@@ -18,8 +18,14 @@ const deleteBusy = ref(false)
 const deleteError = ref('')
 const detail = ref<Endpoint | null>(null)
 const checks = ref<EndpointCheck[]>([])
+const checkPage = ref(0)
+const checkTotal = ref(0)
+const checksLoading = ref(false)
+const checksLoadingMore = ref(false)
+const checksError = ref('')
 const screenshotPreview = ref<ScreenshotAttempt | null>(null)
 const retryingScreenshot = ref('')
+const checkPageSize = 20
 
 const filters = reactive({
   page: 1,
@@ -42,6 +48,11 @@ const inactiveCount = computed(() => endpoints.value.filter((endpoint) => !endpo
 const activeMetricSelected = computed(() => filters.active === 'true' && filters.state === '')
 const inactiveMetricSelected = computed(() => filters.active === 'false' && filters.state === '')
 const attentionMetricSelected = computed(() => filters.active === '' && filters.state === 'needs_attention')
+const hasMoreChecks = computed(() => checks.value.length < checkTotal.value)
+const historyCountLabel = computed(() => {
+  if (!checkTotal.value) return ''
+  return `${checks.value.length} of ${checkTotal.value}`
+})
 
 function params() {
   const query = new URLSearchParams()
@@ -169,19 +180,73 @@ async function toggleMonitoring(endpoint: Endpoint) {
 
 async function showChecks(endpoint: Endpoint) {
   detail.value = endpoint
-  await loadChecks()
+  checks.value = []
+  checkPage.value = 0
+  checkTotal.value = 0
+  checksError.value = ''
+  await loadChecksPage(1, 'replace')
   startHistoryRefresh()
 }
 
-async function loadChecks() {
+async function loadChecksPage(page: number, mode: 'replace' | 'append') {
   if (!detail.value) return
-  const response = await api.listChecks(detail.value.id)
-  checks.value = Array.isArray(response.items) ? response.items : []
+  if (checksLoading.value || checksLoadingMore.value) return
+  const append = mode === 'append'
+  if (append) checksLoadingMore.value = true
+  else checksLoading.value = true
+  checksError.value = ''
+  try {
+    const response = await api.listChecks(detail.value.id, page, checkPageSize)
+    const items = Array.isArray(response.items) ? response.items : []
+    checkTotal.value = typeof response.total === 'number' ? response.total : items.length
+    checkPage.value = typeof response.page === 'number' ? response.page : page
+    if (append) {
+      const seen = new Set(checks.value.map((check) => check.id))
+      checks.value = checks.value.concat(items.filter((check) => !seen.has(check.id)))
+    } else {
+      checks.value = items
+    }
+  } catch (err) {
+    checksError.value = err instanceof Error ? err.message : 'Could not load check history'
+  } finally {
+    if (append) checksLoadingMore.value = false
+    else checksLoading.value = false
+  }
+}
+
+async function refreshChecks() {
+  if (!detail.value || checksLoading.value || checksLoadingMore.value) return
+  try {
+    const response = await api.listChecks(detail.value.id, 1, checkPageSize)
+    const items = Array.isArray(response.items) ? response.items : []
+    checkTotal.value = typeof response.total === 'number' ? response.total : items.length
+    const refreshed = new Set(items.map((check) => check.id))
+    checks.value = items.concat(checks.value.filter((check) => !refreshed.has(check.id)))
+  } catch {
+    // Keep the visible history stable when a background refresh fails.
+  }
+}
+
+async function loadMoreChecks() {
+  if (!hasMoreChecks.value || checksLoading.value || checksLoadingMore.value) return
+  await loadChecksPage(checkPage.value + 1, 'append')
+}
+
+function handleHistoryScroll(event: Event) {
+  const element = event.currentTarget as HTMLElement
+  if (element.scrollTop + element.clientHeight >= element.scrollHeight - 80) {
+    void loadMoreChecks()
+  }
 }
 
 function closeChecks() {
   detail.value = null
   checks.value = []
+  checkPage.value = 0
+  checkTotal.value = 0
+  checksError.value = ''
+  checksLoading.value = false
+  checksLoadingMore.value = false
   screenshotPreview.value = null
   clearHistoryRefresh()
 }
@@ -274,7 +339,7 @@ async function retryScreenshot(attempt: ScreenshotAttempt) {
   try {
     const updated = await api.retryScreenshotAttempt(attempt.id)
     replaceScreenshotAttempt(updated)
-    await loadChecks()
+    await refreshChecks()
   } finally {
     retryingScreenshot.value = ''
   }
@@ -294,7 +359,7 @@ function replaceScreenshotAttempt(updated: ScreenshotAttempt) {
 
 function startHistoryRefresh() {
   clearHistoryRefresh()
-  historyTimer = window.setInterval(loadChecks, 3000)
+  historyTimer = window.setInterval(refreshChecks, 3000)
 }
 
 function clearHistoryRefresh() {
@@ -423,8 +488,8 @@ onUnmounted(() => {
           <th class="last-result-cell">Last result</th>
           <th class="name-cell">Name</th>
           <th class="url-cell">URL</th>
-          <th>Method</th>
-          <th>Interval</th>
+          <th class="method-cell">Method</th>
+          <th class="interval-cell">Interval</th>
           <th class="condition-cell"><span>Condition</span></th>
           <th class="date-cell">Last checked</th>
           <th class="date-cell">Created</th>
@@ -465,8 +530,8 @@ onUnmounted(() => {
               </span>
             </span>
           </td>
-          <td data-label="Method">{{ endpoint.http_method }}</td>
-          <td data-label="Interval">{{ endpoint.ping_interval }}</td>
+          <td class="method-cell" data-label="Method"><span class="compact-cell-value">{{ endpoint.http_method }}</span></td>
+          <td class="interval-cell" data-label="Interval"><span class="compact-cell-value">{{ endpoint.ping_interval }}</span></td>
           <td class="condition-cell" data-label="Condition"><span class="condition-label">{{ conditionLabel(endpoint) }}</span></td>
           <td class="date-cell" data-label="Last checked">{{ formatDate(endpoint.last_checked_at) }}</td>
           <td class="date-cell" data-label="Created">{{ formatDate(endpoint.created_at) }}</td>
@@ -557,56 +622,74 @@ onUnmounted(() => {
   </div>
 
   <div v-if="detail" class="modal-backdrop">
-    <section class="modal panel">
+    <section class="modal panel history-modal">
       <header class="modal-header">
-        <h2>Check history</h2>
+        <div>
+          <h2>Check history</h2>
+          <p v-if="historyCountLabel" class="history-count">{{ historyCountLabel }}</p>
+        </div>
         <button class="icon-button" title="Close" @click="closeChecks"><X :size="16" /></button>
       </header>
-      <table>
-        <thead>
-          <tr>
-            <th>Finished</th>
-            <th>Status</th>
-            <th>Length</th>
-            <th>Duration</th>
-            <th>Matched</th>
-            <th>Error</th>
-          </tr>
-        </thead>
-        <tbody>
-          <template v-for="check in checks" :key="check.id">
+      <div class="history-scroll" :aria-busy="checksLoading || checksLoadingMore" @scroll="handleHistoryScroll">
+        <table class="history-table">
+          <thead>
             <tr>
-              <td>{{ formatDate(check.finished_at) }}</td>
-              <td>{{ check.status_code ?? '' }}</td>
-              <td>{{ check.response_length ?? '' }}{{ check.truncated ? ' truncated' : '' }}</td>
-              <td>{{ check.duration_ms }}ms</td>
-              <td>{{ check.condition_matched ? 'Yes' : 'No' }}</td>
-              <td>{{ check.error || '' }}</td>
+              <th>Finished</th>
+              <th>Status</th>
+              <th>Length</th>
+              <th>Duration</th>
+              <th>Matched</th>
+              <th>Error</th>
             </tr>
-            <tr v-for="attempt in check.screenshot_attempts || []" :key="attempt.id" class="screenshot-attempt-row">
-              <td colspan="6">
-                <div class="screenshot-attempt">
-                  <span class="screenshot-attempt-label">Screenshot</span>
-                  <span>{{ screenshotStatusLabel(attempt) }}</span>
-                  <span v-if="attempt.error" class="muted">{{ attempt.error }}</span>
-                  <button v-if="attempt.image_available" type="button" @click="screenshotPreview = attempt">View</button>
-                  <button
-                    v-if="attempt.status === 'failed'"
-                    type="button"
-                    :disabled="retryingScreenshot === attempt.id"
-                    @click="retryScreenshot(attempt)"
-                  >
-                    {{ retryingScreenshot === attempt.id ? 'Retrying...' : 'Retry' }}
-                  </button>
-                </div>
-              </td>
+          </thead>
+          <tbody>
+            <template v-if="checksLoading && checks.length === 0">
+              <tr v-for="row in 6" :key="`history-skeleton-${row}`" class="skeleton-row">
+                <td v-for="cell in 6" :key="cell"><span class="skeleton-line" /></td>
+              </tr>
+            </template>
+            <template v-for="check in checks" :key="check.id">
+              <tr>
+                <td>{{ formatDate(check.finished_at) }}</td>
+                <td>{{ check.status_code ?? '' }}</td>
+                <td>{{ check.response_length ?? '' }}{{ check.truncated ? ' truncated' : '' }}</td>
+                <td>{{ check.duration_ms }}ms</td>
+                <td>{{ check.condition_matched ? 'Yes' : 'No' }}</td>
+                <td>{{ check.error || '' }}</td>
+              </tr>
+              <tr v-for="attempt in check.screenshot_attempts || []" :key="attempt.id" class="screenshot-attempt-row">
+                <td colspan="6">
+                  <div class="screenshot-attempt">
+                    <span class="screenshot-attempt-label">Screenshot</span>
+                    <span>{{ screenshotStatusLabel(attempt) }}</span>
+                    <span v-if="attempt.error" class="muted">{{ attempt.error }}</span>
+                    <button v-if="attempt.image_available" type="button" @click="screenshotPreview = attempt">View</button>
+                    <button
+                      v-if="attempt.status === 'failed'"
+                      type="button"
+                      :disabled="retryingScreenshot === attempt.id"
+                      @click="retryScreenshot(attempt)"
+                    >
+                      {{ retryingScreenshot === attempt.id ? 'Retrying...' : 'Retry' }}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+            <template v-if="checksLoadingMore">
+              <tr v-for="row in 3" :key="`history-more-skeleton-${row}`" class="skeleton-row">
+                <td v-for="cell in 6" :key="cell"><span class="skeleton-line" /></td>
+              </tr>
+            </template>
+            <tr v-if="checks.length === 0 && !checksLoading && !checksError">
+              <td colspan="6" class="empty">No checks recorded.</td>
             </tr>
-          </template>
-          <tr v-if="checks.length === 0">
-            <td colspan="6" class="empty">No checks recorded.</td>
-          </tr>
-        </tbody>
-      </table>
+            <tr v-if="checksError">
+              <td colspan="6" class="error">{{ checksError }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
   </div>
 
