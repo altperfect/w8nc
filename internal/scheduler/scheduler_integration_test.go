@@ -69,6 +69,86 @@ func TestSchedulerNotifyOnceDeactivatesAndCreatesOneEvent(t *testing.T) {
 	}
 }
 
+func TestSchedulerContinueOnMatchKeepsDeadlineAndCreatesRepeatedEvents(t *testing.T) {
+	store := integrationStore(t)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	deactivateAfter := 60
+	endpoint, err := store.CreateEndpoint(context.Background(), db.EndpointRecord{
+		URL:                    target.URL,
+		HTTPMethod:             "GET",
+		Headers:                []models.Header{},
+		PingIntervalSeconds:    5,
+		DeactivateAfterSeconds: &deactivateAfter,
+		NotifyCondition:        condition("status_code_equals", 200),
+		ContinueOnMatch:        true,
+		NotificationTemplate:   "{{status_code}} {{url}}",
+		Active:                 true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.DeleteEndpoint(context.Background(), endpoint.ID) }()
+	if endpoint.NotifyOnce {
+		t.Fatal("created endpoint did not persist continue-on-match")
+	}
+	if endpoint.DeactivateAt == nil {
+		t.Fatal("created endpoint did not get deactivate_at")
+	}
+	originalDeactivateAt := *endpoint.DeactivateAt
+
+	service := &scheduler.Service{
+		Store:       store,
+		Pinger:      pinger.New(2*time.Second, 1024, true, nil),
+		Concurrency: 1,
+		LockFor:     5 * time.Second,
+		Logger:      slog.Default(),
+	}
+	if err := service.RunDueOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.GetEndpoint(context.Background(), endpoint.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Active || updated.NextRunAt == nil || updated.NotifiedAt == nil {
+		t.Fatalf("endpoint did not continue after match: active=%v next=%v notified=%v", updated.Active, updated.NextRunAt, updated.NotifiedAt)
+	}
+	if updated.DeactivateAt == nil || !updated.DeactivateAt.Equal(originalDeactivateAt) {
+		t.Fatalf("deactivate_at=%v, want unchanged %v", updated.DeactivateAt, originalDeactivateAt)
+	}
+	if count := notificationEventCount(t, store, endpoint.ID); count != 1 {
+		t.Fatalf("notification events=%d, want 1", count)
+	}
+
+	if _, err := store.Pool.Exec(context.Background(), `UPDATE endpoints SET next_run_at=now() WHERE id=$1`, endpoint.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunDueOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if count := notificationEventCount(t, store, endpoint.ID); count != 2 {
+		t.Fatalf("notification events=%d, want 2 after repeated match", count)
+	}
+
+	if _, err := store.Pool.Exec(context.Background(), `UPDATE endpoints SET deactivate_at=now()-interval '1 second' WHERE id=$1`, endpoint.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunDueOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	updated, err = store.GetEndpoint(context.Background(), endpoint.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Active || updated.DeactivatedReason == nil || *updated.DeactivatedReason != "time_limit_expired" {
+		t.Fatalf("expired endpoint state: active=%v reason=%v", updated.Active, updated.DeactivatedReason)
+	}
+}
+
 func TestEndpointIntervalEditRecomputesNextRun(t *testing.T) {
 	store := integrationStore(t)
 	endpoint, err := store.CreateEndpoint(context.Background(), db.EndpointRecord{

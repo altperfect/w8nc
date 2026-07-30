@@ -6,12 +6,12 @@ services:
         NOTIFY_VERSION: "v1.0.7"
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9099:8080"
     environment:
       APP_ADDR: "0.0.0.0:8080"
       DATABASE_URL: "postgres://pinger:pinger@postgres:5432/pinger?sslmode=disable"
       AUTH_ENABLED: "true"
-      COOKIE_SECURE: "false"
+      COOKIE_SECURE: "true"
       SESSION_SECRET: "${SESSION_SECRET:?set SESSION_SECRET or run make init-secrets}"
       ENCRYPTION_KEY: "${ENCRYPTION_KEY:?set ENCRYPTION_KEY or run make init-secrets}"
       NOTIFY_BIN_PATH: "/usr/local/bin/notify"

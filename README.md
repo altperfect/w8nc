@@ -91,7 +91,7 @@ V1 supports the following conditions for notifications:
 - `status_code_changed`: first HTTP response establishes a baseline, later changes fire
 - `response_length_changed`: first non-truncated response establishes a baseline, later length differences greater than tolerance fire
 
-When a condition matches, the app creates one `notification_events` row, deactivates the endpoint, sets `notified_at`, and sets `deactivated_reason=notify_once_condition_matched`.
+When a condition matches, the app creates a `notification_events` row and sets `notified_at`. By default it also deactivates the endpoint and sets `deactivated_reason=notify_once_condition_matched`. Endpoints configured to continue monitoring stay active and retain any `deactivate_after` deadline.
 
 ## Screenshots
 

@@ -1116,7 +1116,13 @@ button.tag-chip {
   min-height: 40px;
 }
 
-.screenshot-option {
+.match-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.74rem;
+}
+
+.match-option {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
@@ -1124,17 +1130,17 @@ button.tag-chip {
   min-height: 0;
 }
 
-.screenshot-option > input[type='checkbox'] {
+.match-option > input[type='checkbox'] {
   width: auto;
   margin-top: 0.4rem;
 }
 
-.screenshot-option-copy {
+.match-option-copy {
   display: grid;
   gap: 0.18rem;
 }
 
-.screenshot-option-title {
+.match-option-title {
   display: flex;
   align-items: center;
   gap: 0.32rem;
@@ -1647,6 +1653,7 @@ button.tag-chip {
   .form-grid,
   .settings-grid,
   .proxy-grid,
+  .match-options,
   .tag-editor-row,
   .duration-field,
   .header-row,

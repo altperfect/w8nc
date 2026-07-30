@@ -354,6 +354,7 @@ type EndpointRecord struct {
 	PingIntervalSeconds    int
 	DeactivateAfterSeconds *int
 	NotifyCondition        models.Condition
+	ContinueOnMatch        bool
 	NotificationTemplate   string
 	ScreenshotOnMatch      bool
 	Tags                   []models.TagInput
@@ -387,13 +388,13 @@ func (s *Store) CreateEndpoint(ctx context.Context, record EndpointRecord) (mode
 	defer func() { _ = tx.Rollback(ctx) }()
 	var id string
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO endpoints (name, description, url, http_method, headers, request_body_enabled, request_body, proxy_enabled, proxy_address, proxy_username, proxy_password_encrypted, ping_interval_seconds, deactivate_after_seconds, notify_condition, notification_template, screenshot_on_match, active, state, next_run_at, deactivate_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+		INSERT INTO endpoints (name, description, url, http_method, headers, request_body_enabled, request_body, proxy_enabled, proxy_address, proxy_username, proxy_password_encrypted, ping_interval_seconds, deactivate_after_seconds, notify_condition, notify_once, notification_template, screenshot_on_match, active, state, next_run_at, deactivate_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 		RETURNING id::text`,
 		record.Name, record.Description, record.URL, record.HTTPMethod, headersJSON, record.RequestBodyEnabled, record.RequestBody,
 		record.Proxy.Enabled, nullString(record.Proxy.Address), nullString(record.Proxy.Username),
 		record.Proxy.PasswordEncrypted, record.PingIntervalSeconds,
-		record.DeactivateAfterSeconds, conditionJSON, record.NotificationTemplate, record.ScreenshotOnMatch,
+		record.DeactivateAfterSeconds, conditionJSON, !record.ContinueOnMatch, record.NotificationTemplate, record.ScreenshotOnMatch,
 		record.Active, state, nextRun, deactivateAt).Scan(&id); err != nil {
 		return models.Endpoint{}, err
 	}
@@ -463,16 +464,16 @@ func (s *Store) UpdateEndpoint(ctx context.Context, id string, record EndpointRe
 		    request_body=$8, proxy_enabled=$9, proxy_address=$10, proxy_username=$11,
 		    proxy_password_encrypted=$12, ping_interval_seconds=$13,
 		    deactivate_after_seconds=$14, notify_condition=$15,
-		    notification_template=$16, screenshot_on_match=$17, active=$18,
-		    state=$19, next_run_at=$20, deactivate_at=$21,
-		    deactivated_reason=$22, notified_at=$23,
+		    notify_once=$16, notification_template=$17, screenshot_on_match=$18, active=$19,
+		    state=$20, next_run_at=$21, deactivate_at=$22,
+		    deactivated_reason=$23, notified_at=$24,
 		    updated_at=now(), version=version+1, locked_until=NULL
 		WHERE id=$1
 		RETURNING id::text`,
 		id, record.Name, record.Description, record.URL, record.HTTPMethod, headersJSON, record.RequestBodyEnabled,
 		record.RequestBody, record.Proxy.Enabled, nullString(record.Proxy.Address),
 		nullString(record.Proxy.Username), record.Proxy.PasswordEncrypted, record.PingIntervalSeconds,
-		record.DeactivateAfterSeconds, conditionJSON, record.NotificationTemplate, record.ScreenshotOnMatch, record.Active,
+		record.DeactivateAfterSeconds, conditionJSON, !record.ContinueOnMatch, record.NotificationTemplate, record.ScreenshotOnMatch, record.Active,
 		state, nextRun, deactivateAt, reason, notifiedAt).Scan(&updatedID); err != nil {
 		return models.Endpoint{}, err
 	}
@@ -726,6 +727,8 @@ func (s *Store) RecordPingResult(ctx context.Context, endpoint models.Endpoint, 
 				return "", err
 			}
 		}
+	}
+	if conditionMatched && endpoint.Active && endpoint.NotifyOnce {
 		if _, err := tx.Exec(ctx, `
 			UPDATE endpoints
 			SET active=FALSE, state='deactivated', last_checked_at=$2, last_status_code=$3,
@@ -749,10 +752,11 @@ func (s *Store) RecordPingResult(ctx context.Context, endpoint models.Endpoint, 
 			SET state=$2, last_checked_at=$3, last_status_code=$4,
 			    last_response_length=$5, last_error=$6, last_duration_ms=$7,
 			    baseline_status_code=$8, baseline_response_length=$9, next_run_at=$10,
+			    notified_at=CASE WHEN $11 THEN now() ELSE notified_at END,
 			    locked_until=NULL, updated_at=now(), version=version+1
 			WHERE id=$1`,
 			endpoint.ID, state, result.FinishedAt, result.StatusCode, result.ResponseLength, result.Error,
-			result.DurationMS, baselineStatus, baselineLength, nextRun); err != nil {
+			result.DurationMS, baselineStatus, baselineLength, nextRun, conditionMatched && endpoint.Active); err != nil {
 			return "", err
 		}
 	}

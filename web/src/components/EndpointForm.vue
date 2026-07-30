@@ -51,6 +51,7 @@ const state = reactive<EndpointInput>({
   ping_interval: '15s',
   deactivate_after: null,
   notify_condition: props.endpoint?.notify_condition || { type: 'status_code_changed' },
+  notify_once: props.endpoint?.notify_once ?? true,
   notification_template: props.endpoint?.notification_template || defaultTemplate,
   screenshot_on_match: props.endpoint?.screenshot_on_match || false,
   tags: props.endpoint?.tags ? props.endpoint.tags.map((tag) => ({ name: tag.name, color: tag.color })) : [],
@@ -83,6 +84,12 @@ const conditionType = computed({
     else if (value === 'status_code_equals') state.notify_condition = { type: value, value: 200 }
     else if (value === 'response_length_changed') state.notify_condition = { type: value, tolerance_bytes: 0 }
     else state.notify_condition = { type: value }
+  }
+})
+const continueMonitoringOnMatch = computed({
+  get: () => !state.notify_once,
+  set: (value: boolean) => {
+    state.notify_once = !value
   }
 })
 
@@ -737,23 +744,32 @@ async function testRequest() {
         Tolerance bytes
         <input v-model.number="state.notify_condition.tolerance_bytes" type="number" min="0" />
       </label>
-      <label class="checkbox-line screenshot-option wide">
-        <input v-model="state.screenshot_on_match" type="checkbox" :disabled="!screenshotSupported" />
-        <span class="screenshot-option-copy">
-          <span class="screenshot-option-title">
-            <span>Screenshot on match</span>
-            <span class="template-info screenshot-help">
-              <button type="button" class="icon-button template-info-button" aria-label="Show screenshot help">
-                <Info :size="14" />
-              </button>
-              <span class="template-tooltip" role="tooltip">
-                Screenshotting is supported only with GET methods. Instead, you can use the response_body placeholder in the notification template.
+      <div class="match-options wide">
+        <label class="checkbox-line match-option">
+          <input v-model="continueMonitoringOnMatch" type="checkbox" />
+          <span class="match-option-copy">
+            <span class="match-option-title">Do not turn monitoring off when the condition is met</span>
+            <span class="checkbox-hint">The system will continue to ping the endpoint when it meets the condition.</span>
+          </span>
+        </label>
+        <label class="checkbox-line match-option">
+          <input v-model="state.screenshot_on_match" type="checkbox" :disabled="!screenshotSupported" />
+          <span class="match-option-copy">
+            <span class="match-option-title">
+              <span>Screenshot on match</span>
+              <span class="template-info screenshot-help">
+                <button type="button" class="icon-button template-info-button" aria-label="Show screenshot help">
+                  <Info :size="14" />
+                </button>
+                <span class="template-tooltip" role="tooltip">
+                  Screenshotting is supported only with GET methods. Instead, you can use the response_body placeholder in the notification template.
+                </span>
               </span>
             </span>
+            <span class="checkbox-hint">Attempt to take a screenshot of the page when the condition is met.</span>
           </span>
-          <span class="checkbox-hint">Attempt to take a screenshot of the page when the condition is met.</span>
-        </span>
-      </label>
+        </label>
+      </div>
       <label class="wide">
         <span class="template-label-row">
           Notification template

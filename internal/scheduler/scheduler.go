@@ -133,7 +133,7 @@ func (s *Service) processEndpoint(ctx context.Context, endpoint models.Endpoint,
 		message = conditions.RenderTemplate(endpoint.NotificationTemplate, endpoint, result, evaluation, settings.Timezone)
 	}
 	var nextRun *time.Time
-	if endpoint.Active && !conditionMatched {
+	if endpoint.Active && (!conditionMatched || !endpoint.NotifyOnce) {
 		value := result.FinishedAt.Add(time.Duration(endpoint.PingIntervalSeconds) * time.Second)
 		nextRun = &value
 	}

@@ -124,6 +124,7 @@ type EndpointInput struct {
 	PingInterval         string        `json:"ping_interval"`
 	DeactivateAfter      string        `json:"deactivate_after,omitempty"`
 	NotifyCondition      Condition     `json:"notify_condition"`
+	NotifyOnce           *bool         `json:"notify_once,omitempty"`
 	NotificationTemplate string        `json:"notification_template"`
 	ScreenshotOnMatch    bool          `json:"screenshot_on_match"`
 	Tags                 []TagInput    `json:"tags"`

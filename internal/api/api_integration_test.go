@@ -204,6 +204,7 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 
 	sensitive := true
 	masked := true
+	notifyOnce := false
 	createBody := models.EndpointInput{
 		Name:               stringPtr("Admin"),
 		Description:        "Admin login surface",
@@ -226,6 +227,7 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 		PingInterval:         "15s",
 		DeactivateAfter:      "2h",
 		NotifyCondition:      condition("status_code_changed", nil),
+		NotifyOnce:           &notifyOnce,
 		NotificationTemplate: models.DefaultNotificationTemplate,
 		ScreenshotOnMatch:    true,
 		Tags: []models.TagInput{
@@ -252,6 +254,9 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	if !created.ScreenshotOnMatch {
 		t.Fatalf("screenshot flag was not persisted on create")
 	}
+	if created.NotifyOnce {
+		t.Fatalf("continue-on-match flag was not persisted on create")
+	}
 	if created.Description != "Admin login surface" {
 		t.Fatalf("description was not persisted on create: %q", created.Description)
 	}
@@ -271,6 +276,9 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	}
 	if fetched.Description != createBody.Description {
 		t.Fatalf("description was not returned on get: %q", fetched.Description)
+	}
+	if fetched.NotifyOnce {
+		t.Fatalf("continue-on-match flag was not returned on get")
 	}
 	if len(fetched.Tags) != 2 || fetched.Tags[0].Color != "blue" || fetched.Tags[1].Color != "teal" {
 		t.Fatalf("tags were not returned on get: %+v", fetched.Tags)
@@ -322,6 +330,9 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 	}
 	if len(updated.Tags) != 1 || updated.Tags[0].Name != "staging" || updated.Tags[0].Color != "amber" {
 		t.Fatalf("tags were not replaced on update: %+v", updated.Tags)
+	}
+	if updated.NotifyOnce {
+		t.Fatalf("continue-on-match flag was not preserved on update")
 	}
 
 	createBody.Tags = []models.TagInput{{Name: "this-tag-name-is-too-long", Color: "teal"}}

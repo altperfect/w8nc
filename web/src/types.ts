@@ -81,6 +81,7 @@ export interface EndpointInput {
   ping_interval: string
   deactivate_after?: string | null
   notify_condition: NotifyCondition
+  notify_once: boolean
   notification_template: string
   screenshot_on_match: boolean
   tags: Tag[]

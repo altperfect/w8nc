@@ -622,11 +622,18 @@ func (s *Server) endpointRecord(ctx context.Context, input models.EndpointInput,
 		}
 	}
 	intervalChanged := existing != nil && existing.PingIntervalSeconds != intervalSeconds
+	notifyOnce := true
+	if existing != nil {
+		notifyOnce = existing.NotifyOnce
+	}
+	if input.NotifyOnce != nil {
+		notifyOnce = *input.NotifyOnce
+	}
 	return db.EndpointRecord{
 		Name: name, Description: description, URL: url, HTTPMethod: method, Headers: headers,
 		RequestBodyEnabled: input.RequestBodyEnabled, RequestBody: requestBody, Proxy: proxy,
 		PingIntervalSeconds: intervalSeconds, DeactivateAfterSeconds: deactivateAfterSeconds,
-		NotifyCondition: input.NotifyCondition, NotificationTemplate: template,
+		NotifyCondition: input.NotifyCondition, ContinueOnMatch: !notifyOnce, NotificationTemplate: template,
 		ScreenshotOnMatch: input.ScreenshotOnMatch, Tags: tags, Active: input.Active,
 	}, intervalChanged, nil
 }

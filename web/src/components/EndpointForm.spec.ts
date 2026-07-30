@@ -378,6 +378,61 @@ describe('EndpointForm', () => {
     expect(wrapper.emitted('save')?.[0]?.[0]).toEqual(expect.objectContaining({ screenshot_on_match: false }))
   })
 
+  it('submits the continue-monitoring option to the left of screenshot on match', async () => {
+    const wrapper = mount(EndpointForm)
+    const options = wrapper.get('.match-options').findAll('label')
+
+    expect(options).toHaveLength(2)
+    expect(options[0].text()).toContain('Do not turn monitoring off when the condition is met')
+    expect(options[0].text()).toContain('The system will continue to ping the endpoint when it meets the condition.')
+    expect(options[1].text()).toContain('Screenshot on match')
+
+    const continueCheckbox = options[0].get('input[type="checkbox"]')
+    expect((continueCheckbox.element as HTMLInputElement).checked).toBe(false)
+
+    await continueCheckbox.setValue(true)
+    await wrapper.find('form').trigger('submit')
+
+    expect(wrapper.emitted('save')?.[0]?.[0]).toEqual(expect.objectContaining({ notify_once: false }))
+  })
+
+  it('loads the continue-monitoring option when editing an endpoint', async () => {
+    const wrapper = mount(EndpointForm, {
+      props: {
+        endpoint: {
+          id: 'endpoint-1',
+          name: 'API',
+          description: '',
+          url: 'https://example.com/api',
+          http_method: 'GET',
+          headers: [],
+          request_body_enabled: false,
+          request_body: '',
+          proxy: { enabled: false },
+          ping_interval_seconds: 15,
+          ping_interval: '15s',
+          notify_once: false,
+          notify_condition: { type: 'status_code_changed' },
+          notification_template: '',
+          screenshot_on_match: false,
+          tags: [],
+          active: true,
+          state: 'unknown',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          version: 1
+        }
+      }
+    })
+    const continueCheckbox = wrapper.get('.match-options label:first-child input[type="checkbox"]')
+
+    expect((continueCheckbox.element as HTMLInputElement).checked).toBe(true)
+
+    await wrapper.find('form').trigger('submit')
+
+    expect(wrapper.emitted('save')?.[0]?.[0]).toEqual(expect.objectContaining({ notify_once: false }))
+  })
+
   it('hides the reuse proxy prompt after five seconds', async () => {
     vi.useFakeTimers()
     mocks.getLastProxy.mockResolvedValueOnce({
