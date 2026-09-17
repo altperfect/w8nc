@@ -274,7 +274,16 @@ func (s *Server) handleCreateEndpoint(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	record, _, err := s.endpointRecord(r.Context(), input, nil)
+	var source *models.Endpoint
+	if input.DuplicateFrom != "" {
+		endpoint, err := s.Store.GetEndpoint(r.Context(), input.DuplicateFrom)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		source = &endpoint
+	}
+	record, _, err := s.endpointRecord(r.Context(), input, source)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

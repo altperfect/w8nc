@@ -113,6 +113,7 @@ type Endpoint struct {
 }
 
 type EndpointInput struct {
+	DuplicateFrom        string        `json:"duplicate_from,omitempty"`
 	Name                 *string       `json:"name"`
 	Description          string        `json:"description"`
 	URL                  string        `json:"url"`

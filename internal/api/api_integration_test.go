@@ -335,6 +335,9 @@ func TestEndpointCRUDAndSensitiveMaskingAPI(t *testing.T) {
 		t.Fatalf("continue-on-match flag was not preserved on update")
 	}
 
+	// New creates need real credentials so these assertions reach tag validation.
+	createBody.Headers[0].Value = "Bearer secret-token"
+	createBody.Proxy.Password = "proxy-pass"
 	createBody.Tags = []models.TagInput{{Name: "this-tag-name-is-too-long", Color: "teal"}}
 	invalidTag := postJSON(t, server, "/api/endpoints", createBody, http.StatusBadRequest)
 	if !strings.Contains(invalidTag.Body.String(), "tag name") {
@@ -640,4 +643,97 @@ func condition(kind string, value any) models.Condition {
 		raw = nil
 	}
 	return models.Condition{Type: kind, Value: raw}
+}
+
+func TestDuplicateEndpointPreservesSecrets(t *testing.T) {
+	store := integrationStore(t)
+	secrets, err := secretbox.NewSecretBox([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &api.Server{
+		Config: config.Config{
+			AuthEnabled:         false,
+			AllowPrivateTargets: true,
+			MinPingInterval:     5 * time.Second,
+			MaxPingInterval:     30 * 24 * time.Hour,
+		},
+		Store:   store,
+		Auth:    auth.NewManager(store, false, "test-secret", false),
+		Secrets: secrets,
+	}
+
+	sensitive := true
+	masked := true
+	notifyOnce := false
+	createBody := models.EndpointInput{
+		Name:               stringPtr("Admin"),
+		Description:        "Admin login surface",
+		URL:                "https://example.com/admin",
+		HTTPMethod:         "GET",
+		RequestBodyEnabled: true,
+		RequestBody:        "<xml>\n  <probe>true</probe>\n</xml>",
+		Headers: []models.HeaderInput{{
+			Name:      "Authorization",
+			Value:     "Bearer secret-token",
+			Sensitive: &sensitive,
+			Masked:    &masked,
+		}},
+		Proxy: models.ProxyConfig{
+			Enabled:  true,
+			Address:  "socks5://proxy.example:1080",
+			Username: "proxy-user",
+			Password: "proxy-pass",
+		},
+		PingInterval:         "15s",
+		DeactivateAfter:      "2h",
+		NotifyCondition:      condition("status_code_changed", nil),
+		NotifyOnce:           &notifyOnce,
+		NotificationTemplate: models.DefaultNotificationTemplate,
+		ScreenshotOnMatch:    true,
+		Tags: []models.TagInput{
+			{Name: "Prod", Color: "teal"},
+			{Name: "auth", Color: "blue"},
+		},
+		Active: true,
+	}
+
+	source := doJSON[models.Endpoint](t, server, http.MethodPost, "/api/endpoints", createBody, http.StatusCreated)
+	defer func() { _ = store.DeleteEndpoint(context.Background(), source.ID) }()
+	createBody.DuplicateFrom = source.ID
+	createBody.Name = stringPtr("Admin - copy")
+	createBody.Headers[0].Value = "********"
+	createBody.Proxy.Password = "********"
+	duplicate := doJSON[models.Endpoint](t, server, http.MethodPost, "/api/endpoints", createBody, http.StatusCreated)
+	defer func() { _ = store.DeleteEndpoint(context.Background(), duplicate.ID) }()
+	if duplicate.ID == source.ID || duplicate.Name == nil || *duplicate.Name != "Admin - copy" {
+		t.Fatal("duplicate must have its own identity and name")
+	}
+	stored, err := store.GetEndpoint(context.Background(), duplicate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Headers[0].ValueEncrypted == nil || stored.Proxy.PasswordEncrypted == nil {
+		t.Fatal("missing copied credentials")
+	}
+	header, err := secrets.Decrypt(*stored.Headers[0].ValueEncrypted)
+	if err != nil || header != "Bearer secret-token" {
+		t.Fatal("header credential was not copied")
+	}
+	password, err := secrets.Decrypt(*stored.Proxy.PasswordEncrypted)
+	if err != nil || password != "proxy-pass" {
+		t.Fatal("proxy credential was not copied")
+	}
+	if duplicate.HeaderViews[0].Value != "********" || duplicate.Proxy.Password != "********" {
+		t.Fatal("credentials exposed")
+	}
+	if duplicate.RequestBody != source.RequestBody || duplicate.PingInterval != source.PingInterval || duplicate.NotifyOnce != source.NotifyOnce || len(duplicate.Tags) != len(source.Tags) {
+		t.Fatal("settings were not copied")
+	}
+	original := doJSON[models.Endpoint](t, server, http.MethodGet, "/api/endpoints/"+source.ID, nil, http.StatusOK)
+	if original.Name == nil || *original.Name != "Admin" {
+		t.Fatal("source was modified")
+	}
+	createBody.DuplicateFrom = "00000000-0000-0000-0000-000000000000"
+	doJSON[map[string]any](t, server, http.MethodPost, "/api/endpoints", createBody, http.StatusNotFound)
 }

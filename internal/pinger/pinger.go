@@ -147,7 +147,16 @@ func (p *Pinger) pingOnce(ctx context.Context, endpoint models.Endpoint, started
 		return result
 	}
 
-	limited := io.LimitReader(resp.Body, p.MaxResponseBytes+1)
+	var responseBody io.Reader = resp.Body
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotModified {
+		decoded, closeDecoders, err := decodedResponseBody(resp.Body, strings.Join(resp.Header.Values("Content-Encoding"), ","))
+		if err != nil {
+			return finishError(result, err)
+		}
+		defer closeDecoders()
+		responseBody = decoded
+	}
+	limited := io.LimitReader(responseBody, p.MaxResponseBytes+1)
 	data, readErr := io.ReadAll(limited)
 	if readErr != nil {
 		return finishError(result, readErr)

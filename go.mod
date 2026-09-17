@@ -3,9 +3,11 @@ module w8nc
 go 1.26
 
 require (
+	github.com/andybalholm/brotli v1.2.4
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc
 	github.com/chromedp/chromedp v0.15.1
 	github.com/jackc/pgx/v5 v5.7.6
+	github.com/klauspost/compress v1.20.0
 	golang.org/x/crypto v0.41.0
 )
 

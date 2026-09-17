@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Edit3, FileText, History, Plus, Power, RefreshCw, Search, Trash2, X } from '@lucide/vue'
 import { api } from '../api/client'
 import EndpointForm from '../components/EndpointForm.vue'
+import EndpointEntry from '../components/EndpointEntry.vue'
 import type { Endpoint, EndpointCheck, EndpointInput, ScreenshotAttempt, Tag } from '../types'
 
 const endpoints = ref<Endpoint[]>([])
@@ -11,8 +12,11 @@ const total = ref(0)
 const error = ref('')
 const formError = ref('')
 const busy = ref(false)
-const modal = ref<'create' | 'edit' | null>(null)
+const modal = ref<'entry' | 'create' | 'edit' | null>(null)
 const editing = ref<Endpoint | null>(null)
+const draft = ref<Partial<EndpointInput> | null>(null)
+const duplicateFrom = ref('')
+let endpointModalTrigger: HTMLElement | null = null
 const deleteTarget = ref<Endpoint | null>(null)
 const deleteBusy = ref(false)
 const deleteError = ref('')
@@ -125,11 +129,12 @@ async function loadTags() {
 }
 
 async function saveEndpoint(input: EndpointInput) {
+  if (busy.value) return
   busy.value = true
   formError.value = ''
   try {
     if (modal.value === 'edit' && editing.value) await api.updateEndpoint(editing.value.id, input)
-    else await api.createEndpoint(input)
+    else await api.createEndpoint({ ...input, duplicate_from: duplicateFrom.value || undefined })
     closeEndpointModal()
     await loadTags()
     await load()
@@ -252,18 +257,31 @@ function closeChecks() {
 }
 
 function openCreate() {
+  endpointModalTrigger = document.activeElement as HTMLElement | null
   editing.value = null
   formError.value = ''
+  draft.value = null
+  duplicateFrom.value = ''
+  modal.value = 'entry'
+}
+
+function startEndpoint(input: Partial<EndpointInput>, source = '') {
+  draft.value = input
+  duplicateFrom.value = source
   modal.value = 'create'
+  void nextTick(() => document.querySelector<HTMLInputElement>('.endpoint-dialog input')?.focus())
 }
 
 function openEdit(endpoint: Endpoint) {
+  endpointModalTrigger = document.activeElement as HTMLElement | null
   editing.value = endpoint
   formError.value = ''
   modal.value = 'edit'
+  void nextTick(() => document.querySelector<HTMLInputElement>('.endpoint-dialog input')?.focus())
 }
 
 function closeEndpointModal() {
+  void nextTick(() => endpointModalTrigger?.focus())
   modal.value = null
   editing.value = null
   formError.value = ''
@@ -272,6 +290,17 @@ function closeEndpointModal() {
 function dismissEndpointModal() {
   if (busy.value) return
   closeEndpointModal()
+}
+
+function endpointDialogKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') { event.stopPropagation(); dismissEndpointModal(); return }
+  if (event.key !== 'Tab') return
+  const dialog = event.currentTarget as HTMLElement
+  const elements = Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, [tabindex="0"]'))
+    .filter(element => element.getClientRects().length > 0)
+  const first = elements[0], last = elements.at(-1)
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
 }
 
 function formatDate(value?: string) {
@@ -585,12 +614,13 @@ onUnmounted(() => {
   </footer>
 
   <div v-if="modal" class="modal-backdrop" @click.self="dismissEndpointModal">
-    <section class="modal panel">
-      <header class="modal-header">
-        <h2>{{ modal === 'edit' ? 'Edit endpoint' : 'Create endpoint' }}</h2>
+    <section class="modal panel endpoint-dialog" :class="{ 'endpoint-entry-modal': modal === 'entry' }" role="dialog" aria-modal="true" aria-labelledby="endpoint-modal-title" @keydown="endpointDialogKeydown">
+      <header v-if="modal !== 'entry'" class="modal-header">
+        <h2 id="endpoint-modal-title">{{ modal === 'edit' ? 'Edit endpoint' : duplicateFrom ? 'Duplicate endpoint' : 'Create endpoint' }}</h2>
         <button class="icon-button" title="Close" @click="dismissEndpointModal"><X :size="16" /></button>
       </header>
-      <EndpointForm :endpoint="editing" :error="formError" @save="saveEndpoint" @cancel="dismissEndpointModal" />
+      <EndpointEntry v-if="modal === 'entry'" @select="startEndpoint" @cancel="dismissEndpointModal" />
+      <EndpointForm v-else :endpoint="modal === 'edit' ? editing : draft" :error="formError" @save="saveEndpoint" @cancel="dismissEndpointModal" />
       <div v-if="busy" class="overlay">Saving...</div>
     </section>
   </div>

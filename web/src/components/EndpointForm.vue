@@ -19,7 +19,7 @@ type TagDraft = {
   color: string
 }
 
-const props = defineProps<{ endpoint?: Endpoint | null; error?: string }>()
+const props = defineProps<{ endpoint?: Endpoint | Partial<EndpointInput> | null; error?: string }>()
 const emit = defineEmits<{ save: [EndpointInput]; cancel: [] }>()
 const descriptionLimit = 200
 
@@ -42,7 +42,7 @@ const state = reactive<EndpointInput>({
   description: props.endpoint?.description || '',
   url: props.endpoint?.url || '',
   http_method: props.endpoint?.http_method || 'GET',
-  headers: props.endpoint ? props.endpoint.headers.map((h) => ({ ...h })) : ([] as HeaderValue[]),
+  headers: props.endpoint ? (props.endpoint.headers || []).map((h) => ({ ...h })) : ([] as HeaderValue[]),
   request_body_enabled: props.endpoint?.request_body_enabled || false,
   request_body: props.endpoint?.request_body || '',
   proxy: props.endpoint?.proxy
@@ -50,7 +50,7 @@ const state = reactive<EndpointInput>({
     : { enabled: false, address: '', username: '', password: '', password_set: false },
   ping_interval: '15s',
   deactivate_after: null,
-  notify_condition: props.endpoint?.notify_condition || { type: 'status_code_changed' },
+  notify_condition: { ...(props.endpoint?.notify_condition || { type: 'status_code_changed' }) },
   notify_once: props.endpoint?.notify_once ?? true,
   notification_template: props.endpoint?.notification_template || defaultTemplate,
   screenshot_on_match: props.endpoint?.screenshot_on_match || false,

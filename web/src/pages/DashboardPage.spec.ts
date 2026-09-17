@@ -14,7 +14,8 @@ const mocks = vi.hoisted(() => ({
   getTemplatePlaceholders: vi.fn(),
   getLastProxy: vi.fn(),
   testEndpointRequest: vi.fn(),
-  deleteTag: vi.fn()
+  deleteTag: vi.fn(),
+  createEndpoint: vi.fn()
 }))
 
 vi.mock('../api/client', () => ({
@@ -31,12 +32,15 @@ vi.mock('../api/client', () => ({
     getLastProxy: mocks.getLastProxy,
     testEndpointRequest: mocks.testEndpointRequest,
     deleteTag: mocks.deleteTag,
+    createEndpoint: mocks.createEndpoint,
     screenshotImageURL: (id: string) => `/api/screenshot-attempts/${id}/image`
   }
 }))
 
 describe('DashboardPage', () => {
   beforeEach(() => {
+    mocks.createEndpoint.mockReset()
+    mocks.createEndpoint.mockResolvedValue({})
     mocks.listEndpoints.mockReset()
     mocks.listTags.mockReset()
     mocks.deleteEndpoint.mockReset()
@@ -151,7 +155,7 @@ describe('DashboardPage', () => {
     expect(params.get('active')).toBeNull()
     expect(params.get('state')).toBe('needs_attention')
 
-    await wrapper.get('input[placeholder="Search by URL or name"]').setValue('api')
+    await wrapper.get<HTMLInputElement>('input[placeholder="Search by URL or name"]').setValue('api')
     await wrapper.findAll('select').find((select) => select.text().includes('Any method'))?.setValue('POST')
     await wrapper.findAll('select').find((select) => select.text().includes('Newest created'))?.setValue('updated_desc')
     await metricButtons[2].trigger('click')
@@ -192,11 +196,54 @@ describe('DashboardPage', () => {
     await wrapper.findAll('button').find((button) => button.text() === 'Add endpoint')?.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Create endpoint')
+    expect(wrapper.find('.entry-options').exists()).toBe(true)
 
     await wrapper.get('.modal-backdrop').trigger('click')
 
-    expect(wrapper.text()).not.toContain('Create endpoint')
+    expect(wrapper.find('.modal-backdrop').exists()).toBe(false)
+  })
+
+  it('opens a blank form through Create', async () => {
+    const wrapper = mount(DashboardPage)
+    await flushPromises()
+    await wrapper.get('.hero-action').trigger('click')
+    await wrapper.get('.entry-options button').trigger('click')
+    expect(wrapper.get('.modal-header h2').text()).toBe('Create endpoint')
+    expect(wrapper.get<HTMLInputElement>('input[placeholder="Admin panel"]').element.value).toBe('')
+    wrapper.unmount()
+  })
+
+  it('reviews an imported request before saving', async () => {
+    const wrapper = mount(DashboardPage)
+    await flushPromises()
+    await wrapper.get('.hero-action').trigger('click')
+    await wrapper.findAll('.entry-options button')[1].trigger('click')
+    await wrapper.get('textarea[aria-label="curl command"]').setValue("curl https://example.com/new -X POST --json '{}'" )
+    await wrapper.get('.endpoint-entry form').trigger('submit')
+    expect(wrapper.get<HTMLInputElement>('input[placeholder="https://example.com/admin"]').element.value).toBe('https://example.com/new')
+    expect(mocks.createEndpoint).not.toHaveBeenCalled()
+    await wrapper.get('form.modal-body').trigger('submit')
+    await flushPromises()
+    expect(mocks.createEndpoint).toHaveBeenCalledWith(expect.objectContaining({ http_method: 'POST', request_body: '{}' }))
+    wrapper.unmount()
+  })
+
+  it('duplicates settings under an editable suggested name', async () => {
+    const wrapper = mount(DashboardPage)
+    await flushPromises()
+    await wrapper.get('.hero-action').trigger('click')
+    await wrapper.findAll('.entry-options button')[2].trigger('click')
+    await flushPromises()
+    const params = mocks.listEndpoints.mock.calls.at(-1)?.[0] as URLSearchParams
+    expect(params.get('search')).toBeNull()
+    await wrapper.get('.duplicate-list button').trigger('click')
+    const name = wrapper.get<HTMLInputElement>('input[placeholder="Admin panel"]')
+    expect(name.element.value).toBe('Admin panel - copy')
+    await name.setValue('Another admin')
+    await wrapper.get('form.modal-body').trigger('submit')
+    await flushPromises()
+    expect(mocks.createEndpoint).toHaveBeenCalledWith(expect.objectContaining({ duplicate_from: 'endpoint-1', name: 'Another admin', description: 'Watch this endpoint after deploys', ping_interval: '15s' }))
+    wrapper.unmount()
   })
 
   it('confirms endpoint deletion in an app modal', async () => {

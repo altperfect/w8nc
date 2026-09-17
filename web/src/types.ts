@@ -70,6 +70,7 @@ export interface Endpoint {
 }
 
 export interface EndpointInput {
+  duplicate_from?: string
   name?: string | null
   description: string
   url: string
