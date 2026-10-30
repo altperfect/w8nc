@@ -71,6 +71,7 @@ The server is configured with environment variables:
 | `SCREENSHOT_VIEWPORT_HEIGHT` | `900` | Screenshot browser viewport height |
 | `SCREENSHOT_MAX_CONCURRENCY` | `1` | Max screenshot attempts processed per worker tick |
 | `ALLOW_PRIVATE_TARGETS` | `false` | Allows localhost/private/metadata targets when true |
+| `TLS_AIA_FETCH` | `true` | Fetches a missing intermediate certificate from the certificate's Authority Information Access (`caIssuers`) URL, the way browsers do, so endpoints that send an incomplete chain are still monitored. Set to `false` to fail those checks instead. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
 
 ## Telegram Notifications

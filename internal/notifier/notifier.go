@@ -17,6 +17,7 @@ import (
 	secretbox "w8nc/internal/crypto"
 	"w8nc/internal/models"
 	"w8nc/internal/socks5"
+	"w8nc/internal/tlsverify"
 )
 
 type Notifier struct {
@@ -185,7 +186,8 @@ func (n *Notifier) telegramToken(settings models.NotificationSettings) (string, 
 }
 
 func (n *Notifier) telegramHTTPClient(settings models.NotificationSettings) (*http.Client, error) {
-	client := &http.Client{Timeout: n.Timeout}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	client := &http.Client{Timeout: n.Timeout, Transport: tlsverify.Wrap(transport)}
 	if !settings.Proxy.Enabled {
 		return client, nil
 	}
@@ -196,7 +198,6 @@ func (n *Notifier) telegramHTTPClient(settings models.NotificationSettings) (*ht
 	if err != nil {
 		return nil, err
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
 	dialer := socks5.Dialer{
 		ProxyAddress: settings.Proxy.Address,
 		Username:     settings.Proxy.Username,
@@ -204,7 +205,6 @@ func (n *Notifier) telegramHTTPClient(settings models.NotificationSettings) (*ht
 		Timeout:      n.Timeout,
 	}
 	transport.DialContext = dialer.DialContext
-	client.Transport = transport
 	return client, nil
 }
 
