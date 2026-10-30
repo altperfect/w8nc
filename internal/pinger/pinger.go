@@ -14,6 +14,7 @@ import (
 	secretbox "w8nc/internal/crypto"
 	"w8nc/internal/models"
 	"w8nc/internal/socks5"
+	"w8nc/internal/tlsverify"
 	"w8nc/internal/validation"
 )
 
@@ -42,7 +43,7 @@ func New(timeout time.Duration, maxBytes int64, allowPrivate bool, secrets *secr
 	}
 	client := &http.Client{
 		Timeout:       timeout,
-		Transport:     transport,
+		Transport:     tlsverify.Wrap(transport),
 		CheckRedirect: redirectPolicy(allowPrivate),
 	}
 	return &Pinger{
@@ -216,7 +217,7 @@ func (p *Pinger) clientFor(endpoint models.Endpoint) (*http.Client, error) {
 	transport.DialContext = dialer.DialContext
 	return &http.Client{
 		Timeout:       p.Timeout,
-		Transport:     transport,
+		Transport:     tlsverify.Wrap(transport),
 		CheckRedirect: redirectPolicy(p.AllowPrivateTargets),
 	}, nil
 }
